@@ -292,6 +292,8 @@ bool Declarator::isDeclarationOfFunction() const {
     case TST_image3d_t:
     case TST_sampler_t:
     case TST_event_t:
+    case TST_recordBaseType:
+    case TST_recordVirtualBaseType:
       return false;
 
     case TST_decltype_auto:
@@ -441,6 +443,8 @@ const char *DeclSpec::getSpecifierName(DeclSpec::TST T) {
   case DeclSpec::TST_decltype:    return "(decltype)";
   case DeclSpec::TST_decltype_auto: return "decltype(auto)";
   case DeclSpec::TST_underlyingType: return "__underlying_type";
+  case DeclSpec::TST_recordBaseType: return "__record_base_type";
+  case DeclSpec::TST_recordVirtualBaseType:return "__record_virtual_base_type";
   case DeclSpec::TST_unknown_anytype: return "__unknown_anytype";
   case DeclSpec::TST_atomic: return "_Atomic";
   case DeclSpec::TST_image1d_t:   return "image1d_t";
@@ -606,6 +610,29 @@ bool DeclSpec::SetTypeSpecType(TST T, SourceLocation TagKwLoc,
   TSTNameLoc = TagNameLoc;
   TypeSpecOwned = false;
   return false;
+}
+
+bool DeclSpec::SetTypeSpecType(TST T, SourceLocation TagKwLoc,
+  SourceLocation TagNameLoc,
+  const char *&PrevSpec,
+  unsigned &DiagID,
+  ParsedType Rep,
+  ArrayRef<Expr*> Args) {
+    assert(isTypeRep(T) && "T does not store a type");
+    assert(isParameterizedRep(T) && "T does not require arguments");
+    assert(Rep && "no type provided!");
+    if (TypeSpecType != TST_unspecified) {
+      PrevSpec = DeclSpec::getSpecifierName((TST) TypeSpecType);
+      DiagID = diag::err_invalid_decl_spec_combination;
+      return true;
+    }
+    TypeSpecType = T;
+    TypeRep = Rep;
+    TSTLoc = TagKwLoc;
+    TSTNameLoc = TagNameLoc;
+    TypeSpecOwned = false;
+    UpdateParamExprs(Args);  // easier
+    return false;
 }
 
 bool DeclSpec::SetTypeSpecType(TST T, SourceLocation Loc,
@@ -792,6 +819,19 @@ bool DeclSpec::SetFriendSpec(SourceLocation Loc, const char *&PrevSpec,
   Friend_specified = true;
   FriendLoc = Loc;
   return false;
+}
+
+bool DeclSpec::SetFriendUsingSpec(SourceLocation Loc, const char *&PrevSpec,
+  unsigned &DiagID) {
+    if (Friend_using_specified) {
+      PrevSpec = "using";
+      DiagID = diag::ext_duplicate_declspec;
+      return true;
+    }
+
+    Friend_using_specified = true;
+    FriendUsingLoc = Loc;   // has to be after 'friend'
+    return false;
 }
 
 bool DeclSpec::setModulePrivateSpec(SourceLocation Loc, const char *&PrevSpec,

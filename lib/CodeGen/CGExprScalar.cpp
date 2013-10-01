@@ -373,6 +373,11 @@ public:
     return llvm::ConstantInt::get(ConvertType(E->getType()), E->getValue());
   }
 
+  Value *VisitReflectionTypeTraitExpr(const ReflectionTypeTraitExpr *E) {
+    //assert(E->getValue() && "ScalarExprEmitter for dependent ReflectionTypeTraitExpr");
+    return Visit(E->getValue());
+  }
+
   Value *VisitArrayTypeTraitExpr(const ArrayTypeTraitExpr *E) {
     return llvm::ConstantInt::get(Builder.getInt32Ty(), E->getValue());
   }

@@ -1919,6 +1919,9 @@ static QualType UnwrapTypeForDebugInfo(QualType T, const ASTContext &C) {
     case Type::UnaryTransform:
       T = cast<UnaryTransformType>(T)->getUnderlyingType();
       break;
+    case Type::ReflectionTransform:
+      T = cast<ReflectionTransformType>(T)->getReflectedType();
+      break;
     case Type::Attributed:
       T = cast<AttributedType>(T)->getEquivalentType();
       break;
@@ -2160,6 +2163,7 @@ llvm::DIType CGDebugInfo::CreateTypeNode(QualType Ty, llvm::DIFile Unit) {
   case Type::TypeOf:
   case Type::Decltype:
   case Type::UnaryTransform:
+  case Type::ReflectionTransform:
   case Type::PackExpansion:
     llvm_unreachable("type should have been unwrapped!");
   case Type::Auto:

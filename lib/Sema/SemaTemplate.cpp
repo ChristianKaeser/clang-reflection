@@ -843,6 +843,8 @@ Sema::CheckClassTemplate(Scope *S, unsigned TagSpec, TagUseKind TUK,
                          AttributeList *Attr,
                          TemplateParameterList *TemplateParams,
                          AccessSpecifier AS, SourceLocation ModulePrivateLoc,
+                         SourceLocation FriendLoc,
+                         SourceLocation FriendUsingLoc,
                          unsigned NumOuterTemplateParamLists,
                          TemplateParameterList** OuterTemplateParamLists) {
   assert(TemplateParams && TemplateParams->size() > 0 &&
@@ -1128,7 +1130,7 @@ Sema::CheckClassTemplate(Scope *S, unsigned TagSpec, TagUseKind TUK,
     FriendDecl *Friend = FriendDecl::Create(Context, CurContext,
                                             NewClass->getLocation(),
                                             NewTemplate,
-                                    /*FIXME:*/NewClass->getLocation());
+                                            FriendLoc, FriendUsingLoc);
     Friend->setAccess(AS_public);
     CurContext->addDecl(Friend);
   }
@@ -3926,6 +3928,11 @@ bool UnnamedLocalNoLinkageFinder::VisitUnaryTransformType(
   return false;
 }
 
+bool UnnamedLocalNoLinkageFinder::VisitReflectionTransformType(
+  const ReflectionTransformType*) {
+    return false;
+}
+
 bool UnnamedLocalNoLinkageFinder::VisitAutoType(const AutoType *T) {
   return Visit(T->getDeducedType());
 }
@@ -5762,6 +5769,8 @@ Sema::ActOnClassTemplateSpecialization(Scope *S, unsigned TagSpec,
                                        ASTTemplateArgsPtr TemplateArgsIn,
                                        SourceLocation RAngleLoc,
                                        AttributeList *Attr,
+                                       SourceLocation FriendLoc,
+                                       SourceLocation FriendUsingLoc,
                                MultiTemplateParamsArg TemplateParameterLists) {
   assert(TUK != TUK_Reference && "References are not specializations");
 
@@ -5971,6 +5980,8 @@ Sema::ActOnClassTemplateSpecialization(Scope *S, unsigned TagSpec,
                                 Attr,
                                 TemplateParams,
                                 AS_none, /*ModulePrivateLoc=*/SourceLocation(),
+                                FriendLoc,
+                                FriendUsingLoc,
                                 TemplateParameterLists.size() - 1,
                                 TemplateParameterLists.data());
     }
@@ -6150,7 +6161,7 @@ Sema::ActOnClassTemplateSpecialization(Scope *S, unsigned TagSpec,
     FriendDecl *Friend = FriendDecl::Create(Context, CurContext,
                                             TemplateNameLoc,
                                             WrittenTy,
-                                            /*FIXME:*/KWLoc);
+                                            FriendLoc, FriendUsingLoc);
     Friend->setAccess(AS_public);
     CurContext->addDecl(Friend);
   } else {
@@ -7098,6 +7109,7 @@ Sema::ActOnExplicitInstantiation(Scope *S,
                         KWLoc, SS, Name, NameLoc, Attr, AS_none,
                         /*ModulePrivateLoc=*/SourceLocation(),
                         MultiTemplateParamsArg(), Owned, IsDependent,
+                        SourceLocation(), SourceLocation(),
                         SourceLocation(), false, TypeResult());
   assert(!IsDependent && "explicit instantiation of dependent name not yet handled");
 

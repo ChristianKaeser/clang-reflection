@@ -1837,6 +1837,15 @@ void MicrosoftCXXNameMangler::mangleType(const UnaryTransformType *T,
     << Range;
 }
 
+void MicrosoftCXXNameMangler::mangleType(const ReflectionTransformType *T,
+                                         SourceRange Range) {
+  DiagnosticsEngine &Diags = Context.getDiags();
+  unsigned DiagID = Diags.getCustomDiagID(DiagnosticsEngine::Error,
+    "cannot mangle this reflection transform type yet");
+  Diags.Report(Range.getBegin(), DiagID)
+    << Range;
+}
+
 void MicrosoftCXXNameMangler::mangleType(const AutoType *T, SourceRange Range) {
   DiagnosticsEngine &Diags = Context.getDiags();
   unsigned DiagID = Diags.getCustomDiagID(DiagnosticsEngine::Error,

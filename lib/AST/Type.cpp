@@ -1840,6 +1840,28 @@ UnaryTransformType::UnaryTransformType(QualType BaseType,
   , BaseType(BaseType), UnderlyingType(UnderlyingType), UKind(UKind)
 {}
 
+ReflectionTransformType::ReflectionTransformType(QualType BaseTy,
+                                                 QualType ReflectedTy,
+                                                 RTTKind Kind,
+                                                 ArrayRef<Expr*> Args,
+                                                 QualType CanonicalTy)
+  : Type(ReflectionTransform, CanonicalTy, BaseTy->isDependentType(),
+  BaseTy->isInstantiationDependentType(),
+  BaseTy->isVariablyModifiedType(),
+  BaseTy->containsUnexpandedParameterPack()),
+  BaseType(BaseTy), ReflectedType(ReflectedTy), RKind(Kind)
+{
+  for (unsigned I = 0; I != Args.size(); ++I) {
+    // forward instant dep/unexpanded param pack info
+    if (Args[I]->isInstantiationDependent())
+      setInstantiationDependent(true);
+    if (Args[I]->containsUnexpandedParameterPack())
+      setContainsUnexpandedParameterPack(true);
+
+    ArgExprs.push_back(Args[I]);
+  }
+}
+
 TagDecl *TagType::getDecl() const {
   return getInterestingTagDecl(decl);
 }

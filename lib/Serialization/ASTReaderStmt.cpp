@@ -1505,6 +1505,19 @@ void ASTStmtReader::VisitBinaryTypeTraitExpr(BinaryTypeTraitExpr *E) {
   E->RhsType = GetTypeSourceInfo(Record, Idx);
 }
 
+void ASTStmtReader::VisitReflectionTypeTraitExpr(ReflectionTypeTraitExpr *E) {
+  VisitExpr(E);
+  E->NumIdx = Record[Idx++];
+  E->RTT = (ReflectionTypeTrait)Record[Idx++];
+  SourceRange Range = ReadSourceRange(Record, Idx);
+  E->Loc = Range.getBegin();
+  E->RParen = Range.getEnd();
+  E->QueriedType = GetTypeSourceInfo(Record, Idx);
+  E->Value = Reader.ReadSubExpr();
+  for (unsigned I = 0, Len = E->NumIdx; I != Len; ++I)
+    E->setIndex(I, Reader.ReadSubExpr());
+}
+
 void ASTStmtReader::VisitTypeTraitExpr(TypeTraitExpr *E) {
   VisitExpr(E);
   E->TypeTraitExprBits.NumArgs = Record[Idx++];
@@ -2400,6 +2413,11 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
 
     case EXPR_BINARY_TYPE_TRAIT:
       S = new (Context) BinaryTypeTraitExpr(Empty);
+      break;
+
+    case EXPR_REFLECTION_TYPE_TRAIT:
+      S = ReflectionTypeTraitExpr::CreateDeserialized(Context,
+                  /*NumArgs=*/Record[ASTStmtReader::NumExprFields]);
       break;
 
     case EXPR_TYPE_TRAIT:

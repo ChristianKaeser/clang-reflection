@@ -1365,6 +1365,7 @@ void ASTDeclReader::VisitFriendDecl(FriendDecl *D) {
     D->getTPLists()[i] = Reader.ReadTemplateParameterList(F, Record, Idx);
   D->NextFriend = ReadDeclID(Record, Idx);
   D->UnsupportedFriend = (Record[Idx++] != 0);
+  D->FriendUsingLoc = ReadSourceLocation(Record, Idx); Idx++;
   D->FriendLoc = ReadSourceLocation(Record, Idx);
 }
 

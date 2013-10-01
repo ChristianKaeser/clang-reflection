@@ -1751,6 +1751,50 @@ static const char *getTypeTraitName(ArrayTypeTrait ATT) {
   llvm_unreachable("Array type trait not covered by switch");
 }
 
+static const char *getTypeTraitName(ReflectionTypeTrait RTT) {
+  switch (RTT) {
+  case RTT_EnumeratorCount:        return "__enumerator_count";
+  case RTT_EnumeratorValue:        return "__enumerator_value";
+  case RTT_EnumeratorName:         return "__enumerator_name";
+
+  case RTT_EnumMinimumValue:       return "__enum_minimum_value";
+  case RTT_EnumMaximumValue:       return "__enum_maximum_value";
+  case RTT_EnumValueDupCount:      return "__enum_value_dup_count";
+  case RTT_EnumHasGapsInValueRange:return "__enum_has_gaps_in_value_range";
+  case RTT_EnumValueMonotonicity:  return "__enum_value_monotonicity";
+  case RTT_EnumValuePopCount:      return "__enum_value_pop_count";
+
+  case RTT_TypeCanonicalName:      return "__type_canonical_name";
+  case RTT_TypeSugaredName:        return "__type_sugared_name";
+  case RTT_TypeIsUnnamed:          return "__type_is_unnamed";
+
+  case RTT_RecordBaseCount:        return "__record_base_count";
+  case RTT_RecordBaseAccessSpec:   return "__record_base_access_spec";
+  case RTT_RecordBaseIsVirtual:    return "__record_base_is_virtual";
+  case RTT_RecordVirtualBaseCount: return "__record_virtual_base_count";
+
+  case RTT_RecordMemberFieldCount: return "__record_member_field_count";
+  case RTT_RecordMemberFieldPtr:   return "__record_member_field_ptr";
+  case RTT_ObjectMemberFieldRef:   return "__object_member_field_ref";
+  case RTT_RecordMemberFieldName:  return "__record_member_field_name";
+  case RTT_RecordMemberFieldAccessSpec:
+    return "__record_member_field_access_spec";
+  case RTT_RecordMemberFieldIsMutable:
+    return "__record_member_field_is_mutable";
+  case RTT_RecordMemberFieldIsBitField:
+    return "__record_member_field_is_bit_field";
+  case RTT_RecordMemberFieldBitFieldSize:
+    return "__record_member_field_bit_field_size";
+  case RTT_RecordMemberFieldIsAnonBitField:
+    return "__record_member_field_is_anon_bit_field";
+  case RTT_RecordMemberFieldIsReference:
+    return "__record_member_field_is_reference";
+
+
+  }
+  llvm_unreachable("Reflection type trait not covered by switch");
+}
+
 static const char *getExpressionTraitName(ExpressionTrait ET) {
   switch (ET) {
   case ET_IsLValueExpr:      return "__is_lvalue_expr";
@@ -1770,6 +1814,17 @@ void StmtPrinter::VisitBinaryTypeTraitExpr(BinaryTypeTraitExpr *E) {
   E->getLhsType().print(OS, Policy);
   OS << ',';
   E->getRhsType().print(OS, Policy);
+  OS << ')';
+}
+
+void StmtPrinter::VisitReflectionTypeTraitExpr(ReflectionTypeTraitExpr *E) {
+  OS << getTypeTraitName(E->getTrait()) << '(';
+  E->getQueriedType().print(OS, Policy);
+  for (unsigned I = 0, N = E->getNumIndex(); I != N; ++I) {
+    if (I > 0)
+      OS << ',';
+    PrintExpr(E->getIndex(I));
+  }
   OS << ')';
 }
 

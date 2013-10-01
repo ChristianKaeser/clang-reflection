@@ -177,6 +177,9 @@ def MSDependentExistsStmt : Stmt;
 // OpenCL Extensions.
 def AsTypeExpr : DStmt<Expr>;
 
+// C++ Reflection Extensions.
+def ReflectionTypeTraitExpr : DStmt<Expr>;
+
 // OpenMP Directives.
 def OMPExecutableDirective : Stmt<1>;
 def OMPParallelDirective : DStmt<OMPExecutableDirective>;

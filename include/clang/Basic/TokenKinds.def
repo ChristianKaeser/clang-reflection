@@ -387,6 +387,44 @@ KEYWORD(__is_trivially_copyable     , KEYCXX)
 KEYWORD(__is_trivially_assignable   , KEYCXX)
 KEYWORD(__underlying_type           , KEYCXX)
 
+// New experimental reflection type traits
+KEYWORD(__enumerator_count               , KEYCXX)
+KEYWORD(__enumerator_value                     , KEYCXX)
+KEYWORD(__enumerator_name                , KEYCXX)
+
+KEYWORD(__enum_minimum_value             , KEYCXX)
+KEYWORD(__enum_maximum_value             , KEYCXX)
+KEYWORD(__enum_value_dup_count           , KEYCXX)
+KEYWORD(__enum_has_gaps_in_value_range   , KEYCXX)
+KEYWORD(__enum_value_monotonicity        , KEYCXX)
+KEYWORD(__enum_value_pop_count           , KEYCXX)
+
+KEYWORD(__type_canonical_name            , KEYCXX)
+KEYWORD(__type_sugared_name              , KEYCXX)
+KEYWORD(__type_is_unnamed                , KEYCXX)
+
+KEYWORD(__record_base_count              , KEYCXX)
+KEYWORD(__record_base_type               , KEYCXX)
+KEYWORD(__record_base_access_spec        , KEYCXX)
+KEYWORD(__record_base_is_virtual         , KEYCXX)
+KEYWORD(__record_virtual_base_count      , KEYCXX)
+KEYWORD(__record_virtual_base_type       , KEYCXX)
+
+//KEYWORD(__record_type_is_thin            , KEYCXX)
+//KEYWORD(__record_type_has_straight_mbr_order   , KEYCXX)
+
+KEYWORD(__record_member_field_count      , KEYCXX)
+KEYWORD(__record_member_field_ptr        , KEYCXX)
+KEYWORD(__object_member_field_ref        , KEYCXX)
+KEYWORD(__record_member_field_name       , KEYCXX)
+KEYWORD(__record_member_field_access_spec, KEYCXX)
+KEYWORD(__record_member_field_is_mutable , KEYCXX)
+KEYWORD(__record_member_field_is_bit_field     , KEYCXX)
+KEYWORD(__record_member_field_bit_field_size   , KEYCXX)
+KEYWORD(__record_member_field_is_anon_bit_field, KEYCXX)
+KEYWORD(__record_member_field_is_reference     , KEYCXX)
+
+
 // Embarcadero Expression Traits
 KEYWORD(__is_lvalue_expr            , KEYCXX)
 KEYWORD(__is_rvalue_expr            , KEYCXX)

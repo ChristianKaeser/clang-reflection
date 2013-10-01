@@ -814,6 +814,10 @@ LValue CodeGenFunction::EmitLValue(const Expr *E) {
     return EmitCXXUuidofLValue(cast<CXXUuidofExpr>(E));
   case Expr::LambdaExprClass:
     return EmitLambdaLValue(cast<LambdaExpr>(E));
+  case Expr::ReflectionTypeTraitExprClass:
+    // TODO FIXME C.K.
+    //assert(cast<ReflectionTypeTraitExpr>(E)->getValue() && "EmitLValue for dependent ReflectionTypeTraitExpr");
+    return EmitLValue(cast<ReflectionTypeTraitExpr>(E)->getValue());
 
   case Expr::ExprWithCleanupsClass: {
     const ExprWithCleanups *cleanups = cast<ExprWithCleanups>(E);

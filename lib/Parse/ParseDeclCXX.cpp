@@ -832,6 +832,59 @@ void Parser::ParseUnderlyingTypeSpecifier(DeclSpec &DS) {
   DS.setTypeofParensRange(T.getRange());
 }
 
+
+void Parser::ParseReflectionTypeSpecifier(DeclSpec &DS) {
+  tok::TokenKind TagTokKind = Tok.getKind();
+  DeclSpec::TST TagType = DeclSpec::TST_unspecified;
+  if (TagTokKind == tok::kw___record_base_type)
+    TagType = DeclSpec::TST_recordBaseType;
+  else if (TagTokKind == tok::kw___record_virtual_base_type)
+    TagType = DeclSpec::TST_recordVirtualBaseType;
+  else
+    llvm_unreachable("Not a reflection type specifier");
+
+  SourceLocation StartLoc = ConsumeToken();
+  BalancedDelimiterTracker Parens(*this, tok::l_paren);
+  if (Parens.expectAndConsume(diag::err_expected_lparen)) {
+      return;
+  }
+
+  TypeResult Ty = ParseTypeName();
+  if (Ty.isInvalid()) {
+    Parens.skipToEnd();
+    return;
+  }
+
+  SmallVector<Expr*, 1> Args;
+  // TST_recordBaseType
+  // TST_recordVirtualBaseType
+  // both require one index parameter
+
+  // Parse comma and then expression
+  if (ExpectAndConsume(tok::comma, diag::err_expected_comma)) {
+    Parens.skipToEnd();
+    return;
+  }
+
+  ExprResult IdxExpr = ParseExpression();
+  if (IdxExpr.isInvalid()) {
+    Parens.skipToEnd();
+    return;
+  }
+  Args.push_back(IdxExpr.get());
+
+  // Match the ')'
+  Parens.consumeClose();
+  if (Parens.getCloseLocation().isInvalid())
+    return;
+
+  const char *PrevSpec = 0;
+  unsigned DiagID;
+  if (DS.SetTypeSpecType(TagType, StartLoc, StartLoc, PrevSpec,
+                         DiagID, Ty.get(), Args))
+    Diag(StartLoc, DiagID) << PrevSpec;
+}
+
 /// ParseBaseTypeSpecifier - Parse a C++ base-type-specifier which is either a
 /// class name or decltype-specifier. Note that we only check that the result 
 /// names a type; semantic analysis will need to verify that the type names a 
@@ -1523,6 +1576,8 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
                        TemplateArgsPtr,
                        TemplateId->RAngleLoc,
                        attrs.getList(),
+                       DS.getFriendSpecLoc(),
+                       DS.getFriendUsingSpecLoc(),
                        MultiTemplateParamsArg(
                                     TemplateParams? &(*TemplateParams)[0] : 0,
                                  TemplateParams? TemplateParams->size() : 0));
@@ -1548,6 +1603,7 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
 
     TagOrTempResult =
       Actions.ActOnTemplatedFriendTag(getCurScope(), DS.getFriendSpecLoc(),
+                                      DS.getFriendUsingSpecLoc(),
                                       TagType, StartLoc, SS,
                                       Name, NameLoc, attrs.getList(),
                                       MultiTemplateParamsArg(
@@ -1581,6 +1637,7 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
                                        SS, Name, NameLoc, attrs.getList(), AS,
                                        DS.getModulePrivateSpecLoc(),
                                        TParams, Owned, IsDependent,
+                                       SourceLocation(), SourceLocation(),
                                        SourceLocation(), false,
                                        clang::TypeResult());
 

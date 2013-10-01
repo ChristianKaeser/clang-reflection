@@ -28,6 +28,7 @@ FriendDecl *FriendDecl::Create(ASTContext &C, DeclContext *DC,
                                SourceLocation L,
                                FriendUnion Friend,
                                SourceLocation FriendL,
+                               SourceLocation UsingL,
                         ArrayRef<TemplateParameterList*> FriendTypeTPLists) {
 #ifndef NDEBUG
   if (Friend.is<NamedDecl*>()) {
@@ -49,7 +50,7 @@ FriendDecl *FriendDecl::Create(ASTContext &C, DeclContext *DC,
   std::size_t Size = sizeof(FriendDecl)
     + FriendTypeTPLists.size() * sizeof(TemplateParameterList*);
   void *Mem = C.Allocate(Size);
-  FriendDecl *FD = new (Mem) FriendDecl(DC, L, Friend, FriendL,
+  FriendDecl *FD = new (Mem) FriendDecl(DC, L, Friend, FriendL, UsingL,
                                         FriendTypeTPLists);
   cast<CXXRecordDecl>(DC)->pushFriendDecl(FD);
   return FD;

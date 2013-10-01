@@ -248,6 +248,18 @@ void ASTTypeWriter::VisitUnaryTransformType(const UnaryTransformType *T) {
   Code = TYPE_UNARY_TRANSFORM;
 }
 
+void ASTTypeWriter::VisitReflectionTransformType(const ReflectionTransformType *T) {
+  Writer.AddTypeRef(T->getBaseType(), Record);
+  Writer.AddTypeRef(T->getReflectedType(), Record);
+  Record.push_back(T->getRTTKind());
+  ArrayRef<Expr*> Args = T->getParamExprs();
+  Record.push_back(Args.size());
+  for (ArrayRef<Expr*>::const_iterator I = Args.begin(), E = Args.end();
+       I != E; ++I)
+    Writer.AddStmt(*I);
+  Code = TYPE_REFLECTION_TRANSFORM;
+}
+
 void ASTTypeWriter::VisitAutoType(const AutoType *T) {
   Writer.AddTypeRef(T->getDeducedType(), Record);
   Record.push_back(T->isDecltypeAuto());
@@ -538,6 +550,13 @@ void TypeLocWriter::VisitUnaryTransformTypeLoc(UnaryTransformTypeLoc TL) {
   Writer.AddSourceLocation(TL.getRParenLoc(), Record);
   Writer.AddTypeSourceInfo(TL.getUnderlyingTInfo(), Record);
 }
+void TypeLocWriter::VisitReflectionTransformTypeLoc(ReflectionTransformTypeLoc TL) {
+  Writer.AddSourceLocation(TL.getKWLoc(), Record);
+  Writer.AddSourceLocation(TL.getLParenLoc(), Record);
+  Writer.AddSourceLocation(TL.getRParenLoc(), Record);
+  Writer.AddTypeSourceInfo(TL.getReflTInfo(), Record);
+  // TODO: add param source locations
+}
 void TypeLocWriter::VisitAutoTypeLoc(AutoTypeLoc TL) {
   Writer.AddSourceLocation(TL.getNameLoc(), Record);
 }
@@ -768,6 +787,7 @@ static void AddStmtsExprs(llvm::BitstreamWriter &Stream,
   RECORD(EXPR_CXX_NOEXCEPT);
   RECORD(EXPR_OPAQUE_VALUE);
   RECORD(EXPR_BINARY_TYPE_TRAIT);
+  RECORD(EXPR_REFLECTION_TYPE_TRAIT);
   RECORD(EXPR_PACK_EXPANSION);
   RECORD(EXPR_SIZEOF_PACK);
   RECORD(EXPR_SUBST_NON_TYPE_TEMPLATE_PARM_PACK);

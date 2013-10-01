@@ -1095,6 +1095,9 @@ static bool IsGlobalLValue(APValue::LValueBase B) {
   // For GCC compatibility, &&label has static storage duration.
   case Expr::AddrLabelExprClass:
     return true;
+  // ReflectionTypeTraitExpr can have a StringLiteral result:
+  case Expr::ReflectionTypeTraitExprClass:
+    return E->isLValue();
   // A Block literal expression may be used as the initialization value for
   // Block variables at global or local static scope.
   case Expr::BlockExprClass:
@@ -1881,6 +1884,8 @@ static unsigned getBaseIndex(const CXXRecordDecl *Derived,
 static APSInt extractStringLiteralCharacter(EvalInfo &Info, const Expr *Lit,
                                             uint64_t Index) {
   // FIXME: Support PredefinedExpr, ObjCEncodeExpr, MakeStringConstant
+  // FIXME: Also ReflectionTypeTraitExpr (when StringLiteral result)
+  // But probably needs fixes in Parser also
   const StringLiteral *S = cast<StringLiteral>(Lit);
   const ConstantArrayType *CAT =
       Info.Ctx.getAsConstantArrayType(S->getType());
@@ -2512,6 +2517,13 @@ static bool handleLValueToRValueConversion(EvalInfo &Info, const Expr *Conv,
       APValue Str(Base, CharUnits::Zero(), APValue::NoLValuePath(), 0);
       CompleteObject StrObj(&Str, Base->getType());
       return extractSubobject(Info, Conv, StrObj, LVal.Designator, RVal);
+    } else if (const ReflectionTypeTraitExpr *RTTE =
+               dyn_cast<ReflectionTypeTraitExpr>(Base)) {
+      // The right thing to do here?
+      assert(0 && "HandleLValueToRValueConversion not implemented "
+            "for ReflectionTypeTraitExpr!");
+      Info.Diag(Conv, diag::note_invalid_subexpr_in_const_expr);
+      return false;
     }
   }
 
@@ -3938,6 +3950,12 @@ public:
   }
   RetTy VisitCXXNullPtrLiteralExpr(const CXXNullPtrLiteralExpr *E) {
     return DerivedZeroInitialization(E);
+  }
+
+  RetTy VisitReflectionTypeTraitExpr(const ReflectionTypeTraitExpr *E) {
+    // Can this happen? Is it a problem?
+    assert(E->getValue() && "Dependent ReflectionTypeTraitExpr has no value to visit");
+    return StmtVisitorTy::Visit(E->getValue());
   }
 
   /// A member expression where the object is a prvalue is itself a prvalue.
@@ -8433,6 +8451,10 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
       return FalseResult;
     return TrueResult;
   }
+  case Expr::ReflectionTypeTraitExprClass:
+    // C.K. TODO FIXME ? Value class is always known... handle somehow?...
+    assert(cast<ReflectionTypeTraitExpr>(E)->getValue() && "ICE check for dependent ReflectionTypeTraitExpr!");
+    return CheckICE(cast<ReflectionTypeTraitExpr>(E)->getValue(), Ctx);
   case Expr::CXXDefaultArgExprClass:
     return CheckICE(cast<CXXDefaultArgExpr>(E)->getExpr(), Ctx);
   case Expr::CXXDefaultInitExprClass:

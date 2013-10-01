@@ -1064,6 +1064,7 @@ CanThrowResult Sema::canThrow(const Expr *E) {
   case Expr::ArrayTypeTraitExprClass:
   case Expr::AtomicExprClass:
   case Expr::BinaryTypeTraitExprClass:
+  case Expr::ReflectionTypeTraitExprClass:
   case Expr::TypeTraitExprClass:
   case Expr::CXXBoolLiteralExprClass:
   case Expr::CXXNoexceptExprClass:

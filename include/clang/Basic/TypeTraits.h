@@ -95,6 +95,41 @@ namespace clang {
     TT_IsTriviallyConstructible
   };
   
+  // \brief Names for experimental (type) traits that take one type
+  // parameter and 0+ integral parameters and return any kind of APValue
+  enum ReflectionTypeTrait {
+    RTT_EnumeratorCount,
+    RTT_EnumeratorValue,
+    RTT_EnumeratorName,
+
+    RTT_EnumMinimumValue,
+    RTT_EnumMaximumValue,
+    RTT_EnumValueDupCount,
+    RTT_EnumHasGapsInValueRange,
+    RTT_EnumValueMonotonicity,
+    RTT_EnumValuePopCount,
+
+    RTT_TypeCanonicalName,
+    RTT_TypeSugaredName,
+    RTT_TypeIsUnnamed,
+
+    RTT_RecordBaseCount,
+    RTT_RecordBaseAccessSpec,
+    RTT_RecordBaseIsVirtual,
+    RTT_RecordVirtualBaseCount,
+
+    RTT_RecordMemberFieldCount,
+    RTT_RecordMemberFieldPtr,
+    RTT_ObjectMemberFieldRef,
+    RTT_RecordMemberFieldAccessSpec,
+    RTT_RecordMemberFieldName,
+    RTT_RecordMemberFieldIsMutable,
+    RTT_RecordMemberFieldIsBitField,
+    RTT_RecordMemberFieldBitFieldSize,
+    RTT_RecordMemberFieldIsAnonBitField,
+    RTT_RecordMemberFieldIsReference
+  };
+
 }
 
 #endif

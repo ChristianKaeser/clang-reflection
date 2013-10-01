@@ -2340,7 +2340,8 @@ void Parser::ParseAlignmentSpecifier(ParsedAttributes &Attrs,
 /// [C++]   'virtual'
 /// [C++]   'explicit'
 /// [OpenCL] '__kernel'
-///       'friend': [C++ dcl.friend]
+/// --    'friend': [C++ dcl.friend]
+///       'friend' 'using'[opt]: [C++ dcl.friend] ++ [C.K.]
 ///       'constexpr': [C++0x dcl.constexpr]
 
 ///
@@ -2857,6 +2858,24 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
       }
       break;
 
+    // C.K. friend using -- Bikeshed: "friend inline"/"inline friend" better? ... or even ".. import"??
+    case tok::kw_using:
+      if (DSContext == DSC_class) {
+        // Use DS.getFriendSpecLoc() and PrevTokLocation to check if this keyword follows 'friend' directly
+        if (!DS.isFriendSpecified() || DS.getFriendSpecLoc() != PrevTokLocation) {
+          PrevSpec = ""; // not actually used by the diagnostic
+          DiagID = diag::err_using_invalid_in_context;
+          isInvalid = true;
+        } else {
+          isInvalid = DS.SetFriendUsingSpec(Loc, PrevSpec, DiagID);
+        }
+      } else  {
+        PrevSpec = ""; // not actually used by the diagnostic
+        DiagID = diag::err_using_invalid_in_context;
+        isInvalid = true;
+      }
+      break;
+
     // Modules
     case tok::kw___module_private__:
       isInvalid = DS.setModulePrivateSpec(Loc, PrevSpec, DiagID);
@@ -3075,6 +3094,12 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
 
     case tok::kw___underlying_type:
       ParseUnderlyingTypeSpecifier(DS);
+      continue;
+
+    // C.K. experimental reflection extension
+    case tok::kw___record_base_type:
+    case tok::kw___record_virtual_base_type:
+      ParseReflectionTypeSpecifier(DS);
       continue;
 
     case tok::kw__Atomic:
@@ -3651,7 +3676,10 @@ void Parser::ParseEnumSpecifier(SourceLocation StartLoc, DeclSpec &DS,
   Decl *TagDecl = Actions.ActOnTag(getCurScope(), DeclSpec::TST_enum, TUK,
                                    StartLoc, SS, Name, NameLoc, attrs.getList(),
                                    AS, DS.getModulePrivateSpecLoc(), TParams,
-                                   Owned, IsDependent, ScopedEnumKWLoc,
+                                   Owned, IsDependent,
+                                   DS.getFriendSpecLoc(),
+                                   DS.getFriendUsingSpecLoc(),
+                                   ScopedEnumKWLoc,
                                    IsScopedUsingClassTag, BaseType);
 
   if (IsDependent) {

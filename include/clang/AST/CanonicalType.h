@@ -598,6 +598,15 @@ struct CanProxyAdaptor<UnaryTransformType>
   LLVM_CLANG_CANPROXY_SIMPLE_ACCESSOR(UnaryTransformType::UTTKind, getUTTKind)
 };
 
+template <>
+struct CanProxyAdaptor<ReflectionTransformType>
+    : public CanProxyBase<ReflectionTransformType> {
+  LLVM_CLANG_CANPROXY_TYPE_ACCESSOR(getBaseType)
+  LLVM_CLANG_CANPROXY_TYPE_ACCESSOR(getReflectedType)
+  LLVM_CLANG_CANPROXY_SIMPLE_ACCESSOR(ReflectionTransformType::RTTKind, getRTTKind)
+  LLVM_CLANG_CANPROXY_SIMPLE_ACCESSOR(ArrayRef<Expr *>, getParamExprs)
+};
+
 template<>
 struct CanProxyAdaptor<TagType> : public CanProxyBase<TagType> {
   LLVM_CLANG_CANPROXY_SIMPLE_ACCESSOR(TagDecl *, getDecl)

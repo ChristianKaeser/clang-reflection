@@ -1984,6 +1984,7 @@ private:
                                          SourceLocation StartLoc,
                                          SourceLocation EndLoc);
   void ParseUnderlyingTypeSpecifier(DeclSpec &DS);
+  void ParseReflectionTypeSpecifier(DeclSpec &DS);
   void ParseAtomicSpecifier(DeclSpec &DS);
 
   ExprResult ParseAlignArgument(SourceLocation Start,
@@ -2266,7 +2267,11 @@ private:
   ExprResult ParseUnaryTypeTrait();
   ExprResult ParseBinaryTypeTrait();
   ExprResult ParseTypeTrait();
-  
+
+  //===--------------------------------------------------------------------===//
+  // Experimental: Reflection Traits
+  ExprResult ParseReflectionTypeTrait();
+
   //===--------------------------------------------------------------------===//
   // Embarcadero: Arary and Expression Traits
   ExprResult ParseArrayTypeTrait();

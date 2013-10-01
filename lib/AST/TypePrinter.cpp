@@ -176,6 +176,7 @@ bool TypePrinter::canPrefixQualifiers(const Type *T,
     case Type::TypeOf:
     case Type::Decltype:
     case Type::UnaryTransform:
+    case Type::ReflectionTransform:
     case Type::Record:
     case Type::Enum:
     case Type::Elaborated:
@@ -799,6 +800,39 @@ void TypePrinter::printUnaryTransformAfter(const UnaryTransformType *T,
   printAfter(T->getBaseType(), OS);
 }
 
+void TypePrinter::printReflectionTransformBefore(const ReflectionTransformType *T,
+                                                 raw_ostream &OS) {
+  IncludeStrongLifetimeRAII Strong(Policy);
+
+  switch (T->getRTTKind()) {
+    case ReflectionTransformType::RecordBaseType:
+      OS << "__record_base_type(";
+    case ReflectionTransformType::RecordVirtualBaseType:
+      OS << "__record_virtual_base_type(";
+  }
+  // Always print base type on which reflection happens
+  print(T->getBaseType(), OS, StringRef());
+  // Print all given parameter exprs
+  ArrayRef<Expr*> Args = T->getParamExprs();
+  for (ArrayRef<Expr*>::const_iterator I = Args.begin(), E = Args.end();
+       I != E; ++I) {
+    OS << ", ";
+    assert(*I && "ReflectionTransformExpr ParamExpr is null");
+    (*I)->printPretty(OS, 0, Policy);
+  }
+  OS << ')';
+  spaceBeforePlaceHolder(OS);
+  return;
+
+  printBefore(T->getBaseType(), OS);
+}
+void TypePrinter::printReflectionTransformAfter(const ReflectionTransformType *T,
+                                                raw_ostream &OS) {
+  IncludeStrongLifetimeRAII Strong(Policy);
+
+  // ??
+  printAfter(T->getBaseType(), OS);
+}
 void TypePrinter::printAutoBefore(const AutoType *T, raw_ostream &OS) { 
   // If the type has been deduced, do not print 'auto'.
   if (!T->getDeducedType().isNull()) {

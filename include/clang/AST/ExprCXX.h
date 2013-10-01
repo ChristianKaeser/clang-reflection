@@ -2238,6 +2238,117 @@ public:
   friend class ASTStmtReader;
 };
 
+
+/// \brief Represents a experimental reflection type trait,
+/// as used in the some C++ proposals
+///
+/// Example:
+/// @code
+///   ....
+/// @endcode
+class ReflectionTypeTraitExpr : public Expr {
+  /// RTT - The trait.
+  unsigned RTT : 8;
+
+  /// The value of the type trait. Null if dependent.
+  Expr *Value;
+
+  /// Loc - The location of the type trait keyword.
+  SourceLocation Loc;
+
+  /// RParen - The location of the closing paren.
+  SourceLocation RParen;
+
+  /// The type being queried.
+  TypeSourceInfo *QueriedType;
+
+  /// \brief The number of index arguments used for this type trait
+  unsigned NumIdx;
+
+  ReflectionTypeTraitExpr(SourceLocation loc, ReflectionTypeTrait kind,
+    TypeSourceInfo *queried, ArrayRef<Expr *> idx, SourceLocation rparen,
+    QualType valty, Expr *val, ExprValueKind vk, ExprObjectKind ok);
+
+  explicit ReflectionTypeTraitExpr(EmptyShell Empty)
+  : Expr(ReflectionTypeTraitExprClass, Empty), RTT(0),
+    QueriedType() { }
+
+
+public:
+
+  //virtual ~ReflectionTypeTraitExpr() { }
+
+  // see CXXUnresolvedConstructExpr *Create
+  // and TypeTraitExpr *Create
+
+  /// \brief Create a new type trait expression.
+  static ReflectionTypeTraitExpr *Create(ASTContext &C, SourceLocation loc,
+    ReflectionTypeTrait kind,
+    TypeSourceInfo *queried,
+    ArrayRef<Expr *> idx,
+    SourceLocation rparen,
+    QualType valty, Expr *val, ExprValueKind vk, ExprObjectKind ok);
+
+  static ReflectionTypeTraitExpr *CreateDeserialized(ASTContext &C, unsigned numidx);
+
+
+  SourceLocation getLocStart() const LLVM_READONLY { return Loc; }
+  SourceLocation getLocEnd() const LLVM_READONLY { return RParen; }
+
+  ReflectionTypeTrait getTrait() const { return static_cast<ReflectionTypeTrait>(RTT); }
+
+  QualType getQueriedType() const { return QueriedType->getType(); }
+
+  TypeSourceInfo *getQueriedTypeSourceInfo() const { return QueriedType; }
+
+  //const Expr *getValue() const { assert(!isTypeDependent()); return Value; }
+  Expr *getValue() const { assert(!isTypeDependent()); return Value; }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == ReflectionTypeTraitExprClass;
+  }
+
+
+  /// \brief Retrieve the number of index arguments.
+  unsigned idx_arg_size() const { return NumIdx; }
+  unsigned getNumIndex() const { return NumIdx; }
+
+  typedef Expr** idx_iterator;
+  idx_iterator idx_begin() { return reinterpret_cast<Expr**>(this + 1); }
+  idx_iterator idx_end() { return idx_begin() + NumIdx; }
+
+  typedef const Expr* const * const_idx_iterator;
+  const_idx_iterator idx_begin() const {
+    return reinterpret_cast<const Expr* const *>(this + 1);
+  }
+  const_idx_iterator idx_end() const {
+    return idx_begin() + NumIdx;
+  }
+
+  Expr *getIndex(unsigned I) {
+    assert(I < NumIdx && "Index argument index out-of-range");
+    return *(idx_begin() + I);
+  }
+
+  const Expr *getIndex(unsigned I) const {
+    assert(I < NumIdx && "Index argument index out-of-range");
+    return *(idx_begin() + I);
+  }
+
+  void setIndex(unsigned I, Expr *E) {
+    assert(I < NumIdx && "Index argument index out-of-range");
+    *(idx_begin() + I) = E;
+  }
+
+  // Iterators
+  child_range children() {
+    Stmt **begin = reinterpret_cast<Stmt**>(this+1);
+    return child_range(begin, begin + NumIdx);
+  }
+
+  friend class ASTStmtReader;
+};
+
 /// \brief A type trait used in the implementation of various C++11 and
 /// Library TR1 trait templates.
 ///
@@ -2369,7 +2480,9 @@ public:
                      TypeSourceInfo *queried, uint64_t value,
                      Expr *dimension, SourceLocation rparen, QualType ty)
     : Expr(ArrayTypeTraitExprClass, ty, VK_RValue, OK_Ordinary,
-           false, queried->getType()->isDependentType(),
+           false,
+           (queried->getType()->isDependentType() ||
+            (dimension && dimension->isValueDependent())),
            (queried->getType()->isInstantiationDependentType() ||
             (dimension && dimension->isInstantiationDependent())),
            queried->getType()->containsUnexpandedParameterPack()),

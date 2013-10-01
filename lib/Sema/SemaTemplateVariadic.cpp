@@ -690,6 +690,17 @@ Optional<unsigned> Sema::getNumArgumentsInExpansion(QualType T,
 bool Sema::containsUnexpandedParameterPacks(Declarator &D) {
   const DeclSpec &DS = D.getDeclSpec();
   switch (DS.getTypeSpecType()) {
+  case TST_recordBaseType:
+  case TST_recordVirtualBaseType: {
+    // test parameter exprs also
+    ArrayRef<Expr*> Args = DS.getParamExprs();
+    for (ArrayRef<Expr*>::iterator I = Args.begin(), E = Args.end();
+      I != E; ++I) {
+        if ((*I)->containsUnexpandedParameterPack())
+          return true;
+    }
+    // fall through!
+                                  }
   case TST_typename:
   case TST_typeofType:
   case TST_underlyingType:

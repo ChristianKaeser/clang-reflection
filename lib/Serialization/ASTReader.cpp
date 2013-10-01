@@ -4739,6 +4739,17 @@ QualType ASTReader::readTypeRecord(unsigned Index) {
     return Context.getUnaryTransformType(BaseType, UnderlyingType, UKind);
   }
 
+  case TYPE_REFLECTION_TRANSFORM: {
+    QualType BaseType = readType(*Loc.F, Record, Idx);
+    QualType ReflType = readType(*Loc.F, Record, Idx);
+    ReflectionTransformType::RTTKind RKind = (ReflectionTransformType::RTTKind)Record[Idx++];
+    unsigned NumArgs = Record[Idx++];
+    SmallVector<Expr*, 2> Args;
+    for (unsigned I = 0; I != NumArgs; ++I)
+      Args.push_back(ReadExpr(*Loc.F));
+    return Context.getReflectionTransformType(BaseType, ReflType, Args, RKind);
+  }
+
   case TYPE_AUTO: {
     QualType Deduced = readType(*Loc.F, Record, Idx);
     bool IsDecltypeAuto = Record[Idx++];
@@ -5086,6 +5097,13 @@ void TypeLocReader::VisitUnaryTransformTypeLoc(UnaryTransformTypeLoc TL) {
   TL.setLParenLoc(ReadSourceLocation(Record, Idx));
   TL.setRParenLoc(ReadSourceLocation(Record, Idx));
   TL.setUnderlyingTInfo(Reader.GetTypeSourceInfo(F, Record, Idx));
+}
+void TypeLocReader::VisitReflectionTransformTypeLoc(ReflectionTransformTypeLoc TL) {
+  TL.setKWLoc(ReadSourceLocation(Record, Idx));
+  TL.setLParenLoc(ReadSourceLocation(Record, Idx));
+  TL.setRParenLoc(ReadSourceLocation(Record, Idx));
+  TL.setReflTInfo(Reader.GetTypeSourceInfo(F, Record, Idx));
+  // TODO: read param source locations
 }
 void TypeLocReader::VisitAutoTypeLoc(AutoTypeLoc TL) {
   TL.setNameLoc(ReadSourceLocation(Record, Idx));

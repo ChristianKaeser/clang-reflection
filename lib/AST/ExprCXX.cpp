@@ -1500,3 +1500,54 @@ TypeTraitExpr *TypeTraitExpr::CreateDeserialized(const ASTContext &C,
 }
 
 void ArrayTypeTraitExpr::anchor() { }
+
+ReflectionTypeTraitExpr::ReflectionTypeTraitExpr(SourceLocation loc,
+  ReflectionTypeTrait kind,
+  TypeSourceInfo *queried, ArrayRef<Expr *> idx, SourceLocation rparen,
+  QualType valty, Expr *val, ExprValueKind vk, ExprObjectKind ok)
+  : Expr(ReflectionTypeTraitExprClass, valty, vk, ok,
+  // this expr is type dependent if the value type is dependent
+  // in case of unknown return type (e.g. enum_value in dep. case)
+  // ty is Context.DependentTy, therefore this is set
+  // ?? could this have unwanted side effects?
+  /*TypeDependent=*/valty->isDependentType(),
+  /*ValueDependent=*/queried->getType()->isDependentType(),
+  /*InstantiationDependent=*/
+  queried->getType()->isInstantiationDependentType(),
+  /*ContainsUnexpandedParameterPack=*/
+  queried->getType()->containsUnexpandedParameterPack() ),
+  RTT(kind), Value(val), Loc(loc), RParen(rparen), QueriedType(queried)
+{
+  NumIdx = idx.size();
+
+  Stmt **StoredArgs = reinterpret_cast<Stmt **>(this + 1);
+  for (unsigned I = 0; I != idx.size(); ++I) {
+    if (idx[I]->isValueDependent())
+      setValueDependent(true);
+    if (idx[I]->isInstantiationDependent())
+      setInstantiationDependent(true);
+    if (idx[I]->containsUnexpandedParameterPack())
+      setContainsUnexpandedParameterPack(true);
+
+    StoredArgs[I] = idx[I];
+  }
+}
+
+ReflectionTypeTraitExpr *ReflectionTypeTraitExpr::Create(ASTContext &C,
+  SourceLocation loc, ReflectionTypeTrait kind,
+  TypeSourceInfo *queried, ArrayRef<Expr *> idx,
+  SourceLocation rparen,
+  QualType valty, Expr *val, ExprValueKind vk, ExprObjectKind ok) {
+    unsigned Size = sizeof(ReflectionTypeTraitExpr) + sizeof(Expr *) * idx.size();
+    void *Mem = C.Allocate(Size);
+    return new (Mem) ReflectionTypeTraitExpr(loc, kind, queried, idx,
+      rparen, valty, val, vk, ok);
+}
+
+ReflectionTypeTraitExpr *ReflectionTypeTraitExpr::CreateDeserialized(ASTContext &C,
+  unsigned numidx) {
+    unsigned Size = sizeof(ReflectionTypeTraitExpr) + sizeof(Expr *) * numidx;
+    void *Mem = C.Allocate(Size);
+    return new (Mem) ReflectionTypeTraitExpr(EmptyShell());
+    // don't save numidx as that is redundant right now (always recreatable)
+}

@@ -61,6 +61,8 @@ namespace clang {
     TST_underlyingType,   // __underlying_type for C++11
     TST_auto,             // C++11 auto
     TST_decltype_auto,    // C++1y decltype(auto)
+    TST_recordBaseType,         // C++ reflection extension:
+    TST_recordVirtualBaseType,  // .. __record_virtual_base_type
     TST_unknown_anytype,  // __unknown_anytype extension
     TST_atomic,           // C11 _Atomic
     TST_image1d_t,        // OpenCL image1d_t

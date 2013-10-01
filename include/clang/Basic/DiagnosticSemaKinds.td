@@ -906,6 +906,11 @@ def err_friend_not_first_in_declaration : Error<
 def err_using_decl_friend : Error<
   "cannot befriend target of using declaration">;
   
+def err_friend_using_without_class_type : Error<
+  "'friend using' declaration requires class type">;
+def err_incomplete_type_used_in_friend_using_decl : Error<
+  "incomplete type %0 used in friend using declaration">;
+
 def err_invalid_member_in_interface : Error<
   "%select{data member |non-public member function |static member function |"
           "user-declared constructor|user-declared destructor|operator |"
@@ -5643,6 +5648,19 @@ def warn_unused_comparison : Warning<
   InGroup<UnusedComparison>;
 def note_inequality_comparison_to_or_assign : Note<
   "use '|=' to turn this inequality comparison into an or-assignment">;
+
+def err_enum_type_required_for_reflection_type_trait_epr : Error<
+  "type %0 is no enumeration type as required for reflection">;
+def err_enum_has_no_enumerators : Error<
+  "type %0 has no defined enumerators">;
+def err_record_type_required_for_reflection_type_trait_epr : Error<
+  "type %0 is no class type as required for reflection">;
+def err_reflection_field_index_expr_not_constant_integer : Error<
+  "field index expression does not evaluate to a constant unsigned int">;
+def err_reflection_field_index_out_of_range : Error<
+  "field index is out-of-range (only %0 field%s0 for type %1)">;
+def err_object_not_of_correct_type_declref : Error<
+  "argument has to be a DeclRefExpr to an instance of type %0 (is %1)">;
 
 def err_incomplete_type_used_in_type_trait_expr : Error<
   "incomplete type %0 used in type trait expression">;

@@ -870,7 +870,12 @@ DEF_TRAVERSE_TYPE(DecltypeType, {
 DEF_TRAVERSE_TYPE(UnaryTransformType, {
     TRY_TO(TraverseType(T->getBaseType()));
     TRY_TO(TraverseType(T->getUnderlyingType()));
-    })
+  })
+
+DEF_TRAVERSE_TYPE(ReflectionTransformType, {
+    TRY_TO(TraverseType(T->getBaseType()));
+    TRY_TO(TraverseType(T->getReflectedType()));
+  })
 
 DEF_TRAVERSE_TYPE(AutoType, {
     TRY_TO(TraverseType(T->getDeducedType()));
@@ -1098,6 +1103,10 @@ DEF_TRAVERSE_TYPELOC(DecltypeType, {
 
 DEF_TRAVERSE_TYPELOC(UnaryTransformType, {
     TRY_TO(TraverseTypeLoc(TL.getUnderlyingTInfo()->getTypeLoc()));
+  })
+
+DEF_TRAVERSE_TYPELOC(ReflectionTransformType, {
+    TRY_TO(TraverseTypeLoc(TL.getReflTInfo()->getTypeLoc()));
   })
 
 DEF_TRAVERSE_TYPELOC(AutoType, {
@@ -2118,6 +2127,10 @@ DEF_TRAVERSE_STMT(UnaryTypeTraitExpr, {
 DEF_TRAVERSE_STMT(BinaryTypeTraitExpr, {
     TRY_TO(TraverseTypeLoc(S->getLhsTypeSourceInfo()->getTypeLoc()));
     TRY_TO(TraverseTypeLoc(S->getRhsTypeSourceInfo()->getTypeLoc()));
+  })
+
+DEF_TRAVERSE_STMT(ReflectionTypeTraitExpr, {
+    TRY_TO(TraverseTypeLoc(S->getQueriedTypeSourceInfo()->getTypeLoc()));
   })
 
 DEF_TRAVERSE_STMT(TypeTraitExpr, {

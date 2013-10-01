@@ -3282,6 +3282,45 @@ public:
   }
 };
 
+/// \brief .....
+/// Analog to ReflectionTypeTraitExpr
+class ReflectionTransformType : public Type {
+public:
+  enum RTTKind {
+    RecordBaseType,
+    RecordVirtualBaseType
+  };
+
+private:
+  /// The untransformed type.
+  QualType BaseType;
+  /// The transformed type if not dependent, otherwise the same as BaseType.
+  QualType ReflectedType;
+
+  /// The index arguments, e.g. which nth base type is queried
+  SmallVector<Expr*, 1> ArgExprs;
+
+  RTTKind RKind;
+protected:
+  ReflectionTransformType(QualType BaseTy, QualType ReflectedTy, RTTKind Kind,
+    ArrayRef<Expr*> Args, QualType CanonicalTy);
+  friend class ASTContext;
+public:
+  bool isSugared() const { return !isDependentType(); } // ?
+  QualType desugar() const { return ReflectedType; }
+
+  QualType getBaseType() const { return BaseType; }
+  QualType getReflectedType() const { return ReflectedType; }
+
+  ArrayRef<Expr*> getParamExprs() const { return ArgExprs; }
+
+  RTTKind getRTTKind() const { return RKind; }
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == ReflectionTransform;
+  }
+};
+
 class TagType : public Type {
   /// Stores the TagDecl associated with this type. The decl may point to any
   /// TagDecl that declares the entity.

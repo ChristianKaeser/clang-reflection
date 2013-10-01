@@ -63,6 +63,7 @@ namespace clang {
     QualType VisitTypeOfType(const TypeOfType *T);
     QualType VisitDecltypeType(const DecltypeType *T);
     QualType VisitUnaryTransformType(const UnaryTransformType *T);
+    QualType VisitReflectionTransformType(const ReflectionTransformType *T);
     QualType VisitAutoType(const AutoType *T);
     // FIXME: DependentDecltypeType
     QualType VisitRecordType(const RecordType *T);
@@ -629,7 +630,14 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
   case Type::UnaryTransform:
     if (!IsStructurallyEquivalent(Context,
                              cast<UnaryTransformType>(T1)->getUnderlyingType(),
-                             cast<UnaryTransformType>(T1)->getUnderlyingType()))
+                             cast<UnaryTransformType>(T2)->getUnderlyingType()))
+      return false;
+    break;
+
+  case Type::ReflectionTransform:
+    if (!IsStructurallyEquivalent(Context,
+                             cast<ReflectionTransformType>(T1)->getReflectedType(),
+                             cast<ReflectionTransformType>(T2)->getReflectedType()))
       return false;
     break;
 
@@ -1697,6 +1705,23 @@ QualType ASTNodeImporter::VisitUnaryTransformType(const UnaryTransformType *T) {
   return Importer.getToContext().getUnaryTransformType(ToBaseType,
                                                        ToUnderlyingType,
                                                        T->getUTTKind());
+}
+
+QualType ASTNodeImporter::VisitReflectionTransformType(const ReflectionTransformType *T) {
+  QualType ToBaseType = Importer.Import(T->getBaseType());
+  QualType ToReflType = Importer.Import(T->getReflectedType());
+  if (ToBaseType.isNull() || ToReflType.isNull())
+    return QualType();
+  ArrayRef<Expr*> FromArgs = T->getParamExprs();
+  SmallVector<Expr*, 2> ToArgs;
+  for (ArrayRef<Expr*>::const_iterator I = FromArgs.begin(), E = FromArgs.end();
+       I != E; ++I)
+    ToArgs.push_back(Importer.Import(*I));
+
+  return Importer.getToContext().getReflectionTransformType(ToBaseType,
+    ToReflType,
+    ToArgs,
+    T->getRTTKind());
 }
 
 QualType ASTNodeImporter::VisitAutoType(const AutoType *T) {

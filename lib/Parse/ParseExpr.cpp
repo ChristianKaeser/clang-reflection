@@ -1221,6 +1221,37 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
   case tok::kw___is_trivially_assignable:
     return ParseBinaryTypeTrait();
 
+  case tok::kw___enumerator_count:
+  case tok::kw___enumerator_value:
+  case tok::kw___enumerator_name:
+  case tok::kw___enum_minimum_value:
+  case tok::kw___enum_maximum_value:
+  case tok::kw___enum_value_dup_count:
+  case tok::kw___enum_has_gaps_in_value_range:
+  case tok::kw___enum_value_monotonicity:
+  case tok::kw___enum_value_pop_count:
+
+  case tok::kw___type_canonical_name:
+  case tok::kw___type_sugared_name:
+  case tok::kw___type_is_unnamed:
+
+  case tok::kw___record_base_access_spec:
+  case tok::kw___record_base_count:
+  case tok::kw___record_base_is_virtual:
+  case tok::kw___record_virtual_base_count:
+
+  case tok::kw___record_member_field_count:
+  case tok::kw___record_member_field_ptr:
+  case tok::kw___object_member_field_ref:
+  case tok::kw___record_member_field_name:
+  case tok::kw___record_member_field_access_spec:
+  case tok::kw___record_member_field_is_mutable:
+  case tok::kw___record_member_field_is_bit_field:
+  case tok::kw___record_member_field_bit_field_size:
+  case tok::kw___record_member_field_is_anon_bit_field:
+  case tok::kw___record_member_field_is_reference:
+    return ParseReflectionTypeTrait();
+
   case tok::kw___is_trivially_constructible:
     return ParseTypeTrait();
       

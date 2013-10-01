@@ -827,6 +827,13 @@ public:
     return CGM.GetConstantArrayFromStringLiteral(E);
   }
 
+  llvm::Constant *VisitReflectionTypeTraitExpr(ReflectionTypeTraitExpr *E) {
+    // TODO remove...
+    assert(false && "ConstExprEmitter not impl: ReflectionTypeTraitExpr");
+    //Visit(E->getValue()); // Forward
+    return 0;
+  }
+
   llvm::Constant *VisitObjCEncodeExpr(ObjCEncodeExpr *E) {
     // This must be an @encode initializing an array in a static initializer.
     // Don't emit it as the address of the string, emit the string data itself
@@ -890,6 +897,10 @@ public:
     }
     case Expr::StringLiteralClass:
       return CGM.GetAddrOfConstantStringFromLiteral(cast<StringLiteral>(E));
+    case Expr::ReflectionTypeTraitExprClass:
+      // TODO remove...
+      assert(0 && "EmitLValue for ReflectionTypeTraitExprClass");
+      return 0;//CGM.GetAddrOfConstantStringFromLiteral(cast<ReflectionStrTypeTraitExpr>(E)->getStringLiteralValue());
     case Expr::ObjCEncodeExprClass:
       return CGM.GetAddrOfConstantStringFromObjCEncode(cast<ObjCEncodeExpr>(E));
     case Expr::ObjCStringLiteralClass: {

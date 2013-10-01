@@ -184,6 +184,12 @@ public:
     CGF.EmitPseudoObjectRValue(E, EnsureSlot(E->getType()));
   }
 
+  void VisitReflectionTypeTraitExpr(ReflectionTypeTraitExpr *E) {
+    // TODO FIXME C.K.
+    assert(E->getValue() && "AggExprEmitter for dependent ReflectionTypeTraitExpr");
+    Visit(E->getValue()); // Forward
+  }
+
   void VisitVAArgExpr(VAArgExpr *E);
 
   void EmitInitializationToLValue(Expr *E, LValue Address);

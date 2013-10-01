@@ -569,28 +569,81 @@ static AccessResult MatchesFriend(Sema &S,
   return MatchesFriend(S, EC, cast<FunctionDecl>(Friend));
 }
 
+// If this friend decl represents a record type, return that
+static CXXRecordDecl *GetFriendRecordDecl(FriendDecl *FriendD) {
+
+  if (TypeSourceInfo *T = FriendD->getFriendType())
+    return T->getType().getNonReferenceType()->getCanonicalTypeUnqualified()
+      ->getAsCXXRecordDecl();
+
+  NamedDecl *Friend
+    = cast<NamedDecl>(FriendD->getFriendDecl()->getCanonicalDecl());
+
+  if (isa<ClassTemplateDecl>(Friend))
+    return cast<ClassTemplateDecl>(Friend)->getTemplatedDecl();
+
+  if (isa<CXXRecordDecl>(Friend))
+    return cast<CXXRecordDecl>(Friend);
+
+  return 0;
+}
+
 static AccessResult GetFriendKind(Sema &S,
                                   const EffectiveContext &EC,
                                   const CXXRecordDecl *Class) {
   AccessResult OnFailure = AR_inaccessible;
 
-  // Okay, check friends.
-  for (CXXRecordDecl::friend_iterator I = Class->friend_begin(),
-         E = Class->friend_end(); I != E; ++I) {
-    FriendDecl *Friend = *I;
+  llvm::SmallPtrSet<const CXXRecordDecl *, 16> CheckedDecls;
+  llvm::SmallVector<const CXXRecordDecl *, 4>  VisitQueue;
 
-    switch (MatchesFriend(S, EC, Friend)) {
-    case AR_accessible:
-      return AR_accessible;
+  do {
+    // mark current as visited
+    CheckedDecls.insert(Class);
 
-    case AR_inaccessible:
-      continue;
+    // Okay, check friends.
+    for (CXXRecordDecl::friend_iterator I = Class->friend_begin(),
+           E = Class->friend_end(); I != E; ++I) {
+      FriendDecl *Friend = *I;
 
-    case AR_dependent:
-      OnFailure = AR_dependent;
-      break;
+      switch (MatchesFriend(S, EC, Friend)) {
+      case AR_accessible:
+        return AR_accessible;
+
+      case AR_inaccessible:
+        break;
+
+      case AR_dependent:
+        OnFailure = AR_dependent;
+        break;
+      }
+
+      // no success yet, check if friend using mode
+      if (Friend->isFriendUsingMode()) {
+
+        CXXRecordDecl *FriendRec = GetFriendRecordDecl(Friend);
+        assert(FriendRec!=0 &&
+               "friend using expects CXXRecordDecl friend declaration");
+
+        // Check if that class is defined for us right now... if not error
+        if (S.RequireCompleteType(Friend->getLocation(),
+                                  S.Context.getTypeDeclType(FriendRec),
+                      diag::err_incomplete_type_used_in_friend_using_decl)) {
+          // don't do anything
+          continue;
+        }
+
+        CXXRecordDecl *DefinedFriendRec = FriendRec->getDefinition();
+        assert(DefinedFriendRec!=0 && "friend using requires complete type");
+
+        // Already visited this friend declaration? Stop infinite recursion
+        if (CheckedDecls.count(DefinedFriendRec))
+          continue;
+
+        VisitQueue.push_back(DefinedFriendRec);
+      }
     }
-  }
+    // recursive checking for using decls necessary?
+  } while (!VisitQueue.empty() && (Class = VisitQueue.pop_back_val()));
 
   // That's it, give up.
   return OnFailure;

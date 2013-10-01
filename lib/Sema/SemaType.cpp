@@ -992,6 +992,36 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
     }
     break;
 
+  case DeclSpec::TST_recordVirtualBaseType:
+  case DeclSpec::TST_recordBaseType: {
+    TypeSourceInfo *TSInfo = 0;
+    Result = S.GetTypeFromParser(DS.getRepAsType(), &TSInfo);
+    assert(!Result.isNull() && "Didn't get a type for reflection transform type?");
+    if (!TSInfo)
+      TSInfo = Context.getTrivialTypeSourceInfo(Result);
+
+    ReflectionTransformType::RTTKind RTT;
+    switch (DS.getTypeSpecType()) {
+    case DeclSpec::TST_recordVirtualBaseType:
+      RTT = ReflectionTransformType::RecordVirtualBaseType;
+      break;
+    case DeclSpec::TST_recordBaseType:
+      RTT = ReflectionTransformType::RecordBaseType;
+      break;
+    default:
+      llvm_unreachable("Unknown ReflectionTransformType::RTTKind");
+    }
+    Result = S.BuildReflectionTransformType(TSInfo,
+                                            DS.getParamExprs(),
+                                            RTT,
+                                            DS.getTypeSpecTypeLoc());
+    if (Result.isNull()) {
+      Result = Context.IntTy;
+      declarator.setInvalidType(true);
+    }
+    break;
+  }
+
   case DeclSpec::TST_auto:
     // TypeQuals handled by caller.
     // If auto is mentioned in a lambda parameter context, convert it to a 
@@ -3589,6 +3619,16 @@ namespace {
       Sema::GetTypeFromParser(DS.getRepAsType(), &TInfo);
       TL.setUnderlyingTInfo(TInfo);
     }
+    void VisitReflectionTransformTypeLoc(ReflectionTransformTypeLoc TL) {
+      // FIXME: Parameter expr SourceLocations are not stored!
+      TL.setKWLoc(DS.getTypeSpecTypeLoc());
+      TL.setParensRange(DS.getTypeofParensRange());
+      assert(DS.getRepAsType());
+      TypeSourceInfo *TInfo = 0;
+      Sema::GetTypeFromParser(DS.getRepAsType(), &TInfo);
+      TL.setReflTInfo(TInfo);
+      // setArgs()...
+    }
     void VisitBuiltinTypeLoc(BuiltinTypeLoc TL) {
       // By default, use the source location of the type specifier.
       TL.setBuiltinLoc(DS.getTypeSpecTypeLoc());
@@ -5476,6 +5516,75 @@ QualType Sema::BuildUnaryTransformType(QualType BaseType,
     }
   }
   llvm_unreachable("unknown unary transform type");
+}
+
+// Try to apply the reference and CV-qualification of Model to T
+static QualType ApplyQualRefFromOther(Sema& S, QualType T, QualType Model)
+{
+  bool IsRef = Model->getAs<ReferenceType>();
+  bool IsLRef = IsRef && Model->getAs<LValueReferenceType>();  // otherwise r-value ref
+
+  QualType QT = T.withCVRQualifiers(Model.getNonReferenceType().getCVRQualifiers());
+  if (IsRef)
+    return IsLRef ? S.Context.getLValueReferenceType(QT) : S.Context.getRValueReferenceType(QT);
+  return QT;
+}
+
+QualType Sema::BuildReflectionTransformType(TypeSourceInfo *TSInfo,
+                                            ArrayRef<Expr*> IdxArgs,
+                                         ReflectionTransformType::RTTKind Kind,
+                                            SourceLocation Loc) {
+
+  QualType BaseType = TSInfo->getType();
+  QualType Reflected = Context.DependentTy;  // better than BaseType!
+
+
+  // Evaluate if not dependent
+  bool dependent = BaseType->isDependentType();
+  for (unsigned I = 0, N = IdxArgs.size(); I != N && !dependent; ++I)
+    dependent = IdxArgs[I]->isValueDependent();
+
+  SmallVector<Expr*, 1> NewArgs;  // only used in non dep context
+
+  if (!dependent) {
+    // Check for placeholders
+    for (unsigned I = 0, N = IdxArgs.size(); I != N; ++I) {
+      Expr* E = IdxArgs[I];
+      if (E->getType()->isPlaceholderType()) {
+        ExprResult result = CheckPlaceholderExpr(E);
+        if (result.isInvalid()) return QualType();
+        E = result.take();
+      }
+      NewArgs.push_back(E);
+    }
+    IdxArgs = NewArgs;
+
+    switch (Kind) {
+    case ReflectionTransformType::RecordBaseType: {
+      const CXXBaseSpecifier *BS = GetRecordBaseAtIndexPos(*this, Loc, TSInfo, IdxArgs[0]);
+      if (!BS)
+        return QualType();
+
+      Reflected = ApplyQualRefFromOther(*this, BS->getType(), BaseType);
+      break;
+                                                  }
+
+    case ReflectionTransformType::RecordVirtualBaseType: {
+      const CXXBaseSpecifier *BS = GetRecordVBaseAtIndexPos(*this, Loc, TSInfo, IdxArgs[0]);
+      if (!BS)
+        return QualType();
+
+      Reflected = ApplyQualRefFromOther(*this, BS->getType(), BaseType);
+      break;
+                                                         }
+
+    default:
+      llvm_unreachable("unknown reflection transform type");
+    }
+  }
+
+  assert(!Reflected.isNull());
+  return Context.getReflectionTransformType(BaseType, Reflected, IdxArgs, Kind);
 }
 
 QualType Sema::BuildAtomicType(QualType T, SourceLocation Loc) {

@@ -1288,6 +1288,10 @@ public:
   QualType BuildUnaryTransformType(QualType BaseType,
                                    UnaryTransformType::UTTKind UKind,
                                    SourceLocation Loc);
+  QualType BuildReflectionTransformType(TypeSourceInfo *TSInfo,
+                                        ArrayRef<Expr*> Exprs,
+                                        ReflectionTransformType::RTTKind Kind,
+                                        SourceLocation Loc);
 
   //===--------------------------------------------------------------------===//
   // Symbol table / Decl tracking callbacks: SemaDecl.cpp.
@@ -1657,10 +1661,13 @@ public:
                  SourceLocation ModulePrivateLoc,
                  MultiTemplateParamsArg TemplateParameterLists,
                  bool &OwnedDecl, bool &IsDependent,
+                 SourceLocation FriendLoc,
+                 SourceLocation FriendUsingLoc,
                  SourceLocation ScopedEnumKWLoc,
                  bool ScopedEnumUsesClassTag, TypeResult UnderlyingType);
 
   Decl *ActOnTemplatedFriendTag(Scope *S, SourceLocation FriendLoc,
+                                SourceLocation FriendUsingLoc,
                                 unsigned TagSpec, SourceLocation TagLoc,
                                 CXXScopeSpec &SS,
                                 IdentifierInfo *Name, SourceLocation NameLoc,
@@ -3217,6 +3224,11 @@ public:
                               const CXXScopeSpec *SS = 0, NamedDecl *FoundD = 0,
                               const TemplateArgumentListInfo *TemplateArgs = 0);
   ExprResult
+  BuildFieldReferenceExpr(Expr *BaseExpr, bool IsArrow,
+                          const CXXScopeSpec &SS, FieldDecl *Field,
+                          DeclAccessPair FoundDecl,
+                          const DeclarationNameInfo &MemberNameInfo);
+  ExprResult
   BuildAnonymousStructUnionMemberReference(
       const CXXScopeSpec &SS,
       SourceLocation nameLoc,
@@ -4185,6 +4197,19 @@ public:
                                   TypeSourceInfo *RhsT,
                                   SourceLocation RParen);
 
+  /// ActOnReflectionTypeTrait - Parsed one of the experimental
+  /// reflection type trait support pseudo-functions.
+  ExprResult ActOnReflectionTypeTrait(ReflectionTypeTrait RTT,
+                                      SourceLocation KWLoc,
+                                      ParsedType LhsTy,
+                                      ArrayRef<Expr*> IdxArgs,
+                                      SourceLocation RParen);
+  ExprResult BuildReflectionTypeTrait(ReflectionTypeTrait RTT,
+                                      SourceLocation KWLoc,
+                                      TypeSourceInfo *TSInfo,
+                                      ArrayRef<Expr*> IdxArgs,
+                                      SourceLocation RParen);
+
   /// \brief Parsed one of the type trait support pseudo-functions.
   ExprResult ActOnTypeTrait(TypeTrait Kind, SourceLocation KWLoc,
                             ArrayRef<ParsedType> Args,
@@ -4764,6 +4789,7 @@ public:
 
   FriendDecl *CheckFriendTypeDecl(SourceLocation LocStart,
                                   SourceLocation FriendLoc,
+                                  SourceLocation FriendUsingLoc,
                                   TypeSourceInfo *TSInfo);
   Decl *ActOnFriendTypeDecl(Scope *S, const DeclSpec &DS,
                             MultiTemplateParamsArg TemplateParams);
@@ -5068,6 +5094,8 @@ public:
                                 TemplateParameterList *TemplateParams,
                                 AccessSpecifier AS,
                                 SourceLocation ModulePrivateLoc,
+                                SourceLocation FriendLoc,
+                                SourceLocation FriendUsingLoc,
                                 unsigned NumOuterTemplateParamLists,
                             TemplateParameterList **OuterTemplateParamLists);
 
@@ -5147,6 +5175,8 @@ public:
                                    ASTTemplateArgsPtr TemplateArgs,
                                    SourceLocation RAngleLoc,
                                    AttributeList *Attr,
+                                   SourceLocation FriendLoc,
+                                   SourceLocation FriendUsingLoc,
                                  MultiTemplateParamsArg TemplateParameterLists);
 
   Decl *ActOnTemplateDeclarator(Scope *S,

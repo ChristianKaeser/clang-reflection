@@ -34,6 +34,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/ADT/TinyPtrVector.h"
 
 namespace clang {
   class ASTContext;
@@ -282,6 +283,8 @@ public:
   static const TST TST_decltype = clang::TST_decltype;
   static const TST TST_decltype_auto = clang::TST_decltype_auto;
   static const TST TST_underlyingType = clang::TST_underlyingType;
+  static const TST TST_recordBaseType = clang::TST_recordBaseType;
+  static const TST TST_recordVirtualBaseType = clang::TST_recordVirtualBaseType;
   static const TST TST_auto = clang::TST_auto;
   static const TST TST_unknown_anytype = clang::TST_unknown_anytype;
   static const TST TST_atomic = clang::TST_atomic;
@@ -343,6 +346,7 @@ private:
 
   // friend-specifier
   unsigned Friend_specified : 1;
+  unsigned Friend_using_specified : 1;
 
   // constexpr-specifier
   unsigned Constexpr_specified : 1;
@@ -352,6 +356,9 @@ private:
     Decl *DeclRep;
     Expr *ExprRep;
   };
+
+  // C.K. C++ reflection support extension
+  llvm::TinyPtrVector<Expr*> ArgExprs;
 
   // attributes.
   ParsedAttributes Attrs;
@@ -381,7 +388,7 @@ private:
   SourceRange TypeofParensRange;
   SourceLocation TQ_constLoc, TQ_restrictLoc, TQ_volatileLoc, TQ_atomicLoc;
   SourceLocation FS_inlineLoc, FS_virtualLoc, FS_explicitLoc, FS_noreturnLoc;
-  SourceLocation FriendLoc, ModulePrivateLoc, ConstexprLoc;
+  SourceLocation FriendLoc, FriendUsingLoc, ModulePrivateLoc, ConstexprLoc;
 
   WrittenBuiltinSpecs writtenBS;
   void SaveWrittenBuiltinSpecs();
@@ -390,10 +397,14 @@ private:
 
   static bool isTypeRep(TST T) {
     return (T == TST_typename || T == TST_typeofType ||
-            T == TST_underlyingType || T == TST_atomic);
+            T == TST_underlyingType || T == TST_atomic ||
+            T == TST_recordBaseType || T == TST_recordVirtualBaseType);
   }
   static bool isExprRep(TST T) {
     return (T == TST_typeofExpr || T == TST_decltype);
+  }
+  static bool isParameterizedRep(TST T) {
+    return (T == TST_recordBaseType || T == TST_recordVirtualBaseType);
   }
 
   DeclSpec(const DeclSpec &) LLVM_DELETED_FUNCTION;
@@ -423,6 +434,7 @@ public:
       FS_explicit_specified(false),
       FS_noreturn_specified(false),
       Friend_specified(false),
+      Friend_using_specified(false),
       Constexpr_specified(false),
       Attrs(attrFactory),
       ProtocolQualifiers(0),
@@ -478,6 +490,10 @@ public:
   Expr *getRepAsExpr() const {
     assert(isExprRep((TST) TypeSpecType) && "DeclSpec does not store an expr");
     return ExprRep;
+  }
+  ArrayRef<Expr*> getParamExprs() const {
+    assert (isParameterizedRep((TST) TypeSpecType) && "DeclSpec is not parameterized");
+    return ArgExprs;
   }
   CXXScopeSpec &getTypeSpecScope() { return TypeScope; }
   const CXXScopeSpec &getTypeSpecScope() const { return TypeScope; }
@@ -608,6 +624,9 @@ public:
   bool SetTypeSpecType(TST T, SourceLocation TagKwLoc,
                        SourceLocation TagNameLoc, const char *&PrevSpec,
                        unsigned &DiagID, Decl *Rep, bool Owned);
+  bool SetTypeSpecType(TST T, SourceLocation TagKwLoc,
+                       SourceLocation TagNameLoc, const char *&PrevSpec,
+                       unsigned &DiagID, ParsedType Rep, ArrayRef<Expr*> Args);
 
   bool SetTypeSpecType(TST T, SourceLocation Loc, const char *&PrevSpec,
                        unsigned &DiagID, Expr *Rep);
@@ -630,6 +649,15 @@ public:
     assert(isExprRep((TST) TypeSpecType));
     ExprRep = Rep;
   }
+  void UpdateParamExprs(ArrayRef<Expr*> Args) {
+    assert(isParameterizedRep((TST) TypeSpecType));
+    ArgExprs.clear();
+    for (ArrayRef<Expr*>::iterator I = Args.begin(), E = Args.end();
+         I != E; ++I) {
+           assert(*I && "No null pointers allowed!");
+           ArgExprs.push_back(*I);
+    }
+  }
 
   bool SetTypeQual(TQ T, SourceLocation Loc, const char *&PrevSpec,
                    unsigned &DiagID, const LangOptions &Lang);
@@ -640,7 +668,9 @@ public:
   bool setFunctionSpecNoreturn(SourceLocation Loc);
 
   bool SetFriendSpec(SourceLocation Loc, const char *&PrevSpec,
-                     unsigned &DiagID);
+    unsigned &DiagID);
+  bool SetFriendUsingSpec(SourceLocation Loc, const char *&PrevSpec,
+    unsigned &DiagID);
   bool setModulePrivateSpec(SourceLocation Loc, const char *&PrevSpec,
                             unsigned &DiagID);
   bool SetConstexprSpec(SourceLocation Loc, const char *&PrevSpec,
@@ -648,6 +678,9 @@ public:
 
   bool isFriendSpecified() const { return Friend_specified; }
   SourceLocation getFriendSpecLoc() const { return FriendLoc; }
+
+  bool isFriendUsingSpecified() const { return Friend_using_specified; }
+  SourceLocation getFriendUsingSpecLoc() const { return FriendUsingLoc; }
 
   bool isModulePrivateSpecified() const { return ModulePrivateLoc.isValid(); }
   SourceLocation getModulePrivateSpecLoc() const { return ModulePrivateLoc; }

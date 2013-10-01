@@ -3568,6 +3568,773 @@ ExprResult Sema::ActOnBinaryTypeTrait(BinaryTypeTrait BTT,
   return BuildBinaryTypeTrait(BTT, KWLoc, LhsTSInfo, RhsTSInfo, RParen);
 }
 
+ExprResult Sema::ActOnReflectionTypeTrait(ReflectionTypeTrait RTT,
+                                          SourceLocation KWLoc,
+                                          ParsedType Ty,
+                                          ArrayRef<Expr*> IdxArgs,
+                                          SourceLocation RParen)
+{
+  TypeSourceInfo *TSInfo;
+  QualType T = GetTypeFromParser(Ty, &TSInfo);
+  if (!TSInfo)
+    TSInfo = Context.getTrivialTypeSourceInfo(T);
+
+  return BuildReflectionTypeTrait(RTT, KWLoc, TSInfo, IdxArgs, RParen);
+}
+
+static const EnumDecl *RequireCompleteEnumType(Sema& S, SourceLocation KWLoc,
+  TypeSourceInfo *TSInfo)
+{
+  QualType T = TSInfo->getType().getNonReferenceType();
+
+  // check if T is enum
+  if (!T->isEnumeralType()) {
+    S.Diag(KWLoc, diag::err_enum_type_required_for_reflection_type_trait_epr)
+      << T << TSInfo->getTypeLoc().getSourceRange();
+    return 0;
+  }
+
+  // Get the enum declaration
+  const EnumType *ET = T->getAs<EnumType>();
+  assert(ET && "ET is null even though T isEnumeralType()");
+  EnumDecl *ED = ET->getDecl();
+  assert(ED && "ED is null even though T isEnumeralType()");
+
+  S.DiagnoseUseOfDecl(ED, KWLoc);  // ??
+
+  ED = ED->getDefinition();
+  if (!ED) {
+    // RequireCompleteType does not seem to catch this case
+    S.Diag(KWLoc, diag::err_incomplete_type_used_in_type_trait_expr)
+      << T << TSInfo->getTypeLoc().getSourceRange();
+    return 0;
+  }
+  assert(ED->isComplete() && "Incomplete enum decl even though ED->getDefinition()");
+
+  return ED;
+}
+
+int clang::RequireValidFieldIndex(Sema& S, SourceLocation KWLoc,
+  TypeSourceInfo *TSInfo, Expr *IdxExpr, size_t MaxIdx)
+{
+  // Evaluate the index expression, error on Idx < 0
+  llvm::APSInt IdxValue;
+  uint64_t Idx;
+  if (S.VerifyIntegerConstantExpression(IdxExpr, &IdxValue,
+    diag::err_reflection_field_index_expr_not_constant_integer,
+    false).isInvalid())
+    return -1;
+  if (IdxValue.isSigned() && IdxValue.isNegative()) {
+    S.Diag(KWLoc, diag::err_reflection_field_index_expr_not_constant_integer)
+      << IdxExpr->getSourceRange();
+    return -1;
+  }
+  Idx = IdxValue.getLimitedValue();
+
+  // .. and Idx >= count
+  if (Idx >= MaxIdx) {
+    S.Diag(KWLoc, diag::err_reflection_field_index_out_of_range)
+      << (int)MaxIdx << TSInfo->getType() << IdxExpr->getSourceRange();
+    return -1;
+  }
+
+  return static_cast<int>(Idx);
+}
+
+static EnumConstantDecl *GetEnumeratorDeclAtIndexPos(Sema& S, SourceLocation KWLoc,
+  TypeSourceInfo *TSInfo, Expr *IdxExpr)
+{
+  // T has to be a enum type
+  const EnumDecl *ED = RequireCompleteEnumType(S, KWLoc, TSInfo);
+  if (!ED)
+    return 0;
+
+  // Evaluate the index expression, error on Idx < 0
+  size_t MaxIdx = std::distance(ED->enumerator_begin(), ED->enumerator_end());
+  int Idx = RequireValidFieldIndex(S, KWLoc, TSInfo, IdxExpr, MaxIdx);
+  if (Idx < 0)
+    return 0;
+
+  // Get the requested EnumConstantDecl
+  EnumDecl::enumerator_iterator It = ED->enumerator_begin();
+  std::advance(It, Idx);
+
+  return *It;
+}
+
+const CXXRecordDecl *clang::RequireRecordType(Sema& S, SourceLocation KWLoc,
+  TypeSourceInfo *TSInfo, bool reqComplete)
+{
+  QualType T = TSInfo->getType().getNonReferenceType();
+
+  // check if T is a record --- FIXME TODO: can RecordDecl occurr anywhere or always CXXRecordDecl?
+  if (!T->isRecordType()) {
+    S.Diag(KWLoc, diag::err_record_type_required_for_reflection_type_trait_epr)
+      << T << TSInfo->getTypeLoc().getSourceRange();
+    return 0;
+  }
+
+  // Get the record declaration
+  const RecordType *RT = T->getAs<RecordType>();
+  assert(RT && "RT is null even though T isRecordType()");
+  CXXRecordDecl *RD = cast<CXXRecordDecl>(RT->getDecl());
+  assert(RD && "RD is null even though T isRecordType()");
+
+  S.DiagnoseUseOfDecl(RD, KWLoc);  // ??
+
+  RD = RD->getDefinition();
+  if (!RD) {
+    // RequireCompleteType does not seem to catch this case
+    S.Diag(KWLoc, diag::err_incomplete_type_used_in_type_trait_expr)
+      << T << TSInfo->getTypeLoc().getSourceRange();
+    return 0;
+  }
+
+  // completeness check.. okay?
+  if (reqComplete && !RD->isCompleteDefinition()) {
+    S.Diag(KWLoc, diag::err_incomplete_type_used_in_type_trait_expr)
+      << T << TSInfo->getTypeLoc().getSourceRange();
+    return 0;
+  }
+
+  return RD;
+}
+
+const CXXBaseSpecifier *clang::GetRecordBaseAtIndexPos(Sema& S, SourceLocation KWLoc,
+  TypeSourceInfo *TSInfo, Expr *IdxExpr)
+{
+  // T has to be a record type (not complete)
+  const CXXRecordDecl *RD = RequireRecordType(S, KWLoc, TSInfo, false);
+  if (!RD)
+    return 0;
+
+  // Evaluate the index expression, error on Idx < 0
+  size_t MaxIdx = std::distance(RD->bases_begin(), RD->bases_end());
+  int Idx = RequireValidFieldIndex(S, KWLoc, TSInfo, IdxExpr, MaxIdx);
+  if (Idx < 0)
+    return 0;
+
+  // Get the requested base decl
+  CXXRecordDecl::base_class_const_iterator It = RD->bases_begin();
+  std::advance(It, Idx);
+
+  return &(*It);
+}
+const CXXBaseSpecifier *clang::GetRecordVBaseAtIndexPos(Sema& S, SourceLocation KWLoc,
+  TypeSourceInfo *TSInfo, Expr *IdxExpr)
+{
+  // T has to be a record type (not complete)
+  const CXXRecordDecl *RD = RequireRecordType(S, KWLoc, TSInfo, false);
+  if (!RD)
+    return 0;
+
+  // Evaluate the index expression, error on Idx < 0
+  size_t MaxIdx = std::distance(RD->vbases_begin(), RD->vbases_end());
+  int Idx = RequireValidFieldIndex(S, KWLoc, TSInfo, IdxExpr, MaxIdx);
+  if (Idx < 0)
+    return 0;
+
+  // Get the requested base decl
+  CXXRecordDecl::base_class_const_iterator It = RD->vbases_begin();
+  std::advance(It, Idx);
+
+  return &(*It);
+}
+
+FieldDecl *clang::GetRecordMemberFieldAtIndexPos(Sema& S, SourceLocation KWLoc,
+  TypeSourceInfo *TSInfo, Expr *IdxExpr)
+{
+  // T has to be a record type (not complete)
+  const CXXRecordDecl *RD = RequireRecordType(S, KWLoc, TSInfo, false);
+  if (!RD)
+    return 0;
+
+  // Evaluate the index expression, error on Idx < 0
+  size_t MaxIdx = std::distance(RD->field_begin(), RD->field_end());
+  int Idx = RequireValidFieldIndex(S, KWLoc, TSInfo, IdxExpr, MaxIdx);
+  if (Idx < 0)
+    return 0;
+
+  // Get the requested field decl
+  CXXRecordDecl::field_iterator It = RD->field_begin();
+  std::advance(It, Idx);
+
+  return *It;
+}
+
+static StringLiteral *AllocateStringLiteral(ASTContext& Context,
+                      SourceLocation KWLoc, QualType& StrTy, StringRef StrVal)
+{
+  // Always ASCII string (C++ Identifier allow nothing else)
+  StringLiteral::StringKind Kind = StringLiteral::Ascii;
+
+  StrTy = Context.CharTy;
+  // A C++ string literal has a const-qualified element type (C++ 2.13.4p1).
+  StrTy.addConst();
+
+  // Get an array type for the string, according to C99 6.4.5.  This includes
+  // the nul terminator character as well as the string length for pascal
+  // strings.
+  StrTy = Context.getConstantArrayType(StrTy,
+    llvm::APInt(32, StrVal.size()+1),
+    ArrayType::Normal, 0);
+
+  // Create the string
+  return StringLiteral::Create(Context, StrVal,
+    Kind, false, StrTy, KWLoc);
+}
+
+static IntegerLiteral *AllocateConvertedAccessSpecifier(ASTContext& Context,
+                    SourceLocation KWLoc, QualType& VType, AccessSpecifier AS)
+{
+  int val;
+  switch (AS) {
+  case AS_private:    val = 0; break;
+  case AS_protected:  val = 1; break;
+  case AS_public:     val = 2; break;
+  default: llvm_unreachable("Invalid AccessSpecifier set!");
+  }
+  llvm::APSInt apval = Context.MakeIntValue(val, VType);
+  return IntegerLiteral::Create(Context, apval, VType, KWLoc);
+}
+
+ExprResult Sema::BuildReflectionTypeTrait(ReflectionTypeTrait RTT,
+  SourceLocation KWLoc,
+  TypeSourceInfo *TSInfo,
+  ArrayRef<Expr*> IdxArgs,
+  SourceLocation RParen) {
+
+  QualType T = TSInfo->getType();
+
+  // The result value -- is 0 if dependent???
+  // COULD BE VERY PROBLEMATIC IN MANY CONTEXTS!!!
+  // use placeholder/dummy exprs instead??
+  Expr *Value = NULL;
+
+  // the default for a unknown type is DependentTy
+  QualType VType = Context.DependentTy;
+
+  // Std is RValue, StringLiterals are LValues
+  ExprValueKind VKind = VK_RValue;
+  ExprObjectKind OKind = OK_Ordinary;
+
+  /// TODO: remove this switch?
+  // try to initialize the expr type if possible
+  switch (RTT) {
+  case RTT_EnumeratorCount:
+  case RTT_EnumValueDupCount:
+  case RTT_RecordBaseCount:
+  case RTT_RecordVirtualBaseCount:
+  case RTT_RecordMemberFieldCount:
+  case RTT_RecordMemberFieldBitFieldSize:
+    // always "size_t" result type:
+    VType = Context.getSizeType();
+    break;
+
+  case RTT_EnumHasGapsInValueRange:
+  case RTT_TypeIsUnnamed:
+  case RTT_RecordBaseIsVirtual:
+  case RTT_RecordMemberFieldIsMutable:
+  case RTT_RecordMemberFieldIsBitField:
+  case RTT_RecordMemberFieldIsAnonBitField:
+  case RTT_RecordMemberFieldIsReference:
+    // boolean type
+    VType = Context.BoolTy;
+    break;
+
+  case RTT_RecordBaseAccessSpec:
+  case RTT_RecordMemberFieldAccessSpec:
+    // ... size_t .. or ??
+    VType = Context.IntTy;
+    break;
+
+  case RTT_EnumValueMonotonicity:
+  case RTT_EnumValuePopCount:
+    // has to be signed!
+    VType = Context.IntTy;
+    break;
+
+  case RTT_EnumeratorValue:
+  case RTT_EnumMinimumValue:
+  case RTT_EnumMaximumValue:
+    // is dependent on T (only): will be set during evaluation or
+    // left as DependentTy
+    // TODO: set here in case of known T and dependent IdxExpr?
+    break;
+
+  case RTT_RecordMemberFieldPtr:
+  case RTT_ObjectMemberFieldRef:
+    // Exact type is dependent on everything, just forward...
+    break;
+
+  case RTT_EnumeratorName:
+  case RTT_TypeCanonicalName:
+  case RTT_TypeSugaredName:
+  case RTT_RecordMemberFieldName:
+    // String literals are lvalues
+    VKind = VK_LValue;
+    // The result type depends on the length of the string -> set later
+    break;
+
+  default:
+    llvm_unreachable("Unknown type trait or not implemented");
+  }
+
+
+  // Evaluate if not dependent
+  bool dependent = T->isDependentType();
+  for (unsigned I = 0, N = IdxArgs.size(); I != N && !dependent; ++I)
+    dependent = IdxArgs[I]->isValueDependent();
+
+  SmallVector<Expr*, 2> NewArgs;  // only used in non dep context
+
+  if (!dependent) {
+    // Check for placeholders
+    for (unsigned I = 0, N = IdxArgs.size(); I != N; ++I) {
+      Expr* E = IdxArgs[I];
+      if (E->getType()->isPlaceholderType()) {
+        ExprResult result = CheckPlaceholderExpr(E);
+        if (result.isInvalid()) return ExprError();
+        E = result.take();
+      }
+      NewArgs.push_back(E);
+    }
+    IdxArgs = NewArgs;
+
+    // necessary? -- to the contrary, more fine grained checks are needed:
+    // e.g. bases reflection allowed in body.. members not
+    // require complete type for any lookup
+    //if (RequireCompleteType(KWLoc, T, diag::err_incomplete_type_used_in_type_trait_expr)) {
+    //  // incomplete, can't process further
+    //  return ExprError();
+    //}
+
+    switch (RTT) {
+    case RTT_EnumeratorCount: {
+      // T has to be a enum type
+      const EnumDecl *ED = RequireCompleteEnumType(*this, KWLoc, TSInfo);
+      if (!ED)
+        return ExprError();
+
+      // Count the range
+      uint64_t val = std::distance(ED->enumerator_begin(), ED->enumerator_end());
+      llvm::APSInt apval = Context.MakeIntValue(val, VType);
+      Value = IntegerLiteral::Create(Context, apval, VType, KWLoc);
+      break;
+                             }
+
+    case RTT_EnumeratorValue: {
+      // Try to get the requested EnumConstantDecl
+      EnumConstantDecl *ECD = GetEnumeratorDeclAtIndexPos(*this, KWLoc, TSInfo, IdxArgs[0]);
+      if (!ECD)
+        return ExprError();
+
+      VType = ECD->getType().getNonReferenceType();
+      // Simulate a DeclRefExpr at the current location, referencing the enum constant
+      Value = BuildDeclRefExpr(ECD, VType, VK_RValue, KWLoc).get();
+      assert(Value && "BuildDeclRefExpr failed for EnumValue!");
+      break;
+                              }
+
+    case RTT_EnumMinimumValue:
+    case RTT_EnumMaximumValue: {
+      // T has to be a enum type
+      const EnumDecl *ED = RequireCompleteEnumType(*this, KWLoc, TSInfo);
+      if (!ED)
+        return ExprError();
+
+      // no enumerators: no min/max possible!
+      if (ED->enumerator_begin() == ED->enumerator_end()) {
+        Diag(KWLoc, diag::err_enum_has_no_enumerators)
+          << T << TSInfo->getTypeLoc().getSourceRange();
+        return ExprError();
+      }
+
+      // Find min/max:
+      EnumDecl::enumerator_iterator ResEl;
+      ResEl = (RTT == RTT_EnumMinimumValue) ?
+        std::min_element(ED->enumerator_begin(), ED->enumerator_end()) :
+        std::max_element(ED->enumerator_begin(), ED->enumerator_end());
+      assert(ResEl != ED->enumerator_end() && "No EnumMin/MaxValue found?");
+
+      VType = Context.getEnumType(ED);
+      // Simulate a DeclRefExpr for the found element, referencing the enum constant
+      Value = BuildDeclRefExpr((*ResEl), VType, VK_RValue, KWLoc).get();
+      assert(Value && "BuildDeclRefExpr failed for EnumMin/MaxValue!");
+      break;
+                               }
+
+    case RTT_EnumValueDupCount: {
+      // T has to be a enum type
+      const EnumDecl *ED = RequireCompleteEnumType(*this, KWLoc, TSInfo);
+      if (!ED)
+        return ExprError();
+
+      // Count the duplicated values (by Set insertion)
+      uint64_t dups = 0;
+      llvm::SmallSet<llvm::APSInt, 8> UniqueVals;
+      for (EnumDecl::enumerator_iterator I = ED->enumerator_begin(),
+             E = ED->enumerator_end(); I != E; ++I)
+        dups += !UniqueVals.insert((*I)->getInitVal());  // increment by 1 if no insert
+
+      llvm::APSInt apval = Context.MakeIntValue(dups, VType);
+      Value = IntegerLiteral::Create(Context, apval, VType, KWLoc);
+      break;
+                                }
+
+    case RTT_EnumHasGapsInValueRange: {
+      // T has to be a enum type
+      const EnumDecl *ED = RequireCompleteEnumType(*this, KWLoc, TSInfo);
+      if (!ED)
+        return ExprError();
+
+      // Are there any undefined values between Min/Max?
+      bool TestRes = false;   // if no/one enumerator(s) -> no
+
+      const size_t DeclCount = std::distance(ED->enumerator_begin(), ED->enumerator_end());
+      if (DeclCount > 1) {
+        // get sorted value range
+        llvm::SmallVector<llvm::APSInt, 8> SortedVals;
+        SortedVals.reserve(DeclCount);
+        for (EnumDecl::enumerator_iterator I = ED->enumerator_begin(),
+               E = ED->enumerator_end(); I != E; ++I)
+          SortedVals.push_back((*I)->getInitVal());
+        std::sort(SortedVals.begin(), SortedVals.end());
+
+        for (size_t I = 1; I < DeclCount; ++I) {
+          const llvm::APSInt& Cur = SortedVals[I];
+          llvm::APSInt Last(SortedVals[I-1]);
+          if (Cur != Last && Cur != ++Last) {
+            TestRes = true;  // more than 1 difference
+            break;
+          }
+        }
+      }
+
+      Value = new (Context) CXXBoolLiteralExpr(TestRes, VType, KWLoc);
+      break;
+                                      }
+
+    case RTT_EnumValueMonotonicity: {
+      // T has to be a enum type
+      const EnumDecl *ED = RequireCompleteEnumType(*this, KWLoc, TSInfo);
+      if (!ED)
+        return ExprError();
+
+      // Return -2/-1/0/+1/+2 for (strictly = *2) (decreasing = *-1) monotonicity
+      // 0 for non/any (for <= 1 enumerators)
+      int64_t Mon = 0;
+      const size_t DeclCount = std::distance(ED->enumerator_begin(), ED->enumerator_end());
+      if (DeclCount > 1) {
+        bool strictly = true;
+        int direction = 0;
+        EnumDecl::enumerator_iterator I = ED->enumerator_begin(), E = ED->enumerator_end();
+        llvm::APSInt Last((*I)->getInitVal());
+        for (++I; I != E; ++I) {
+          const llvm::APSInt& Cur = (*I)->getInitVal();
+          if (Cur == Last) {
+            strictly = false;
+          } else {
+            int ndirection = Cur > Last ? 1 : -1;
+            if (direction == 0)  // only at start
+              direction = ndirection;
+            else {
+              if (direction != ndirection) {
+                direction = 0;  // no monotonicity
+                break;
+              }
+            }
+          }
+          Last = Cur;
+        }
+        Mon = direction * (strictly ? 2 : 1);
+      }
+
+      // signed/unsigned okay?...
+      llvm::APSInt apval = Context.MakeIntValue(static_cast<uint64_t>(Mon), VType);
+      Value = IntegerLiteral::Create(Context, apval, VType, KWLoc);
+      break;
+                                    }
+
+    case RTT_EnumValuePopCount: {
+      // T has to be a enum type
+      const EnumDecl *ED = RequireCompleteEnumType(*this, KWLoc, TSInfo);
+      if (!ED)
+        return ExprError();
+
+      // does a popcount on every enumerator, and returns that value
+      // if it's the same for every one. Otherwise -1.
+      // Only useful to see if flag-style enum (with popcount==1)
+      int64_t Pop = -1;
+      if (ED->enumerator_begin() != ED->enumerator_end()) {
+        EnumDecl::enumerator_iterator I = ED->enumerator_begin(),
+          E = ED->enumerator_end();
+        Pop = (*I)->getInitVal().countPopulation();
+        for (++I; I != E; ++I) {
+          int64_t NPop = (*I)->getInitVal().countPopulation();
+          if (NPop != Pop) {
+            Pop = -1;
+            break;
+          }
+        }
+      }
+
+      llvm::APSInt apval = Context.MakeIntValue(static_cast<uint64_t>(Pop), VType);
+      Value = IntegerLiteral::Create(Context, apval, VType, KWLoc);
+      break;
+                                }
+
+    case RTT_RecordBaseCount: {
+      // No complete definition required!
+      const CXXRecordDecl *RD = RequireRecordType(*this, KWLoc, TSInfo, false);
+      if (!RD)
+        return ExprError();
+
+      llvm::APSInt apval = Context.MakeIntValue(RD->getNumBases(), VType);
+      Value = IntegerLiteral::Create(Context, apval, VType, KWLoc);
+      break;
+                              }
+
+    case RTT_RecordVirtualBaseCount: {
+      // No complete definition required!
+      const CXXRecordDecl *RD = RequireRecordType(*this, KWLoc, TSInfo, false);
+      if (!RD)
+        return ExprError();
+
+      llvm::APSInt apval = Context.MakeIntValue(RD->getNumVBases(), VType);
+      Value = IntegerLiteral::Create(Context, apval, VType, KWLoc);
+      break;
+                                     }
+
+    case RTT_RecordMemberFieldCount: {
+      // Complete definition required!
+      const CXXRecordDecl *RD = RequireRecordType(*this, KWLoc, TSInfo, true);
+      if (!RD)
+        return ExprError();
+
+      // Count the range
+      uint64_t val = std::distance(RD->field_begin(), RD->field_end());
+      llvm::APSInt apval = Context.MakeIntValue(val, VType);
+      Value = IntegerLiteral::Create(Context, apval, VType, KWLoc);
+      break;
+                                     }
+
+    case RTT_RecordBaseIsVirtual: {
+      // Try to get the requested base specifier
+      const CXXBaseSpecifier *BS = GetRecordBaseAtIndexPos(*this, KWLoc, TSInfo, IdxArgs[0]);
+      if (!BS)
+        return ExprError();
+
+      // Does the current base specifier contain virtual?
+      Value = new (Context) CXXBoolLiteralExpr(BS->isVirtual(), VType, KWLoc);
+      break;
+                                        }
+
+
+    case RTT_EnumeratorName: {
+      // Try to get the requested EnumConstantDecl
+      const EnumConstantDecl *ECD = GetEnumeratorDeclAtIndexPos(*this, KWLoc, TSInfo, IdxArgs[0]);
+      if (!ECD)
+        return ExprError();
+
+      // Just take the Decl name
+      Value = AllocateStringLiteral(Context, KWLoc, VType, ECD->getName());
+      break;
+                             }
+
+    case RTT_TypeCanonicalName: {
+      PrintingPolicy PP(LangOpts);
+      PP.SuppressTagKeyword = true;   // no 'struct', 'class'...
+      Value = AllocateStringLiteral(Context, KWLoc, VType, T.getCanonicalType().getAsString(PP));
+      break;
+                                }
+
+    case RTT_TypeSugaredName:
+      // not really useful, besides maybe for macros..
+      Value = AllocateStringLiteral(Context, KWLoc, VType, T.getAsString());
+      break;
+
+    case RTT_TypeIsUnnamed: {
+      const Type *TP = T.getTypePtrOrNull();
+      assert(TP && "__type_is_anonymous Type is null");
+
+      // ??? Correct and/or useful??
+      Value = new (Context) CXXBoolLiteralExpr(TP->hasUnnamedOrLocalType(), VType, KWLoc);
+      break;
+                              }
+
+    case RTT_RecordMemberFieldName: {
+      // Try to get the requested member field
+      const FieldDecl *FD = GetRecordMemberFieldAtIndexPos(*this, KWLoc, TSInfo, IdxArgs[0]);
+      if (!FD)
+        return ExprError();
+
+      // Just take the Decl name
+      Value = AllocateStringLiteral(Context, KWLoc, VType, FD->getName());
+      break;
+                                     }
+
+
+    case RTT_RecordMemberFieldPtr: {
+      // Try to get the requested member field
+      FieldDecl *FD = GetRecordMemberFieldAtIndexPos(*this, KWLoc, TSInfo, IdxArgs[0]);
+      if (!FD)
+        return ExprError();
+
+      // Disallow e.g. bit-field address taking
+      //CheckAddressOfOperand
+
+      QualType ClassType = Context.getTypeDeclType(FD->getParent());
+      NestedNameSpecifier *Qualifier
+        = NestedNameSpecifier::Create(Context, 0, false,
+        ClassType.getTypePtr());
+      CXXScopeSpec SS;
+      SS.MakeTrivial(Context, Qualifier, KWLoc);
+
+      // see BuildDeclarationNameExpr
+      VType = FD->getType().getNonReferenceType();
+      // Simulate a DeclRefExpr at the current location, referencing the field
+      ExprResult FDRE = BuildDeclRefExpr(FD, VType, VK_LValue, KWLoc, &SS);
+      assert(FDRE.isUsable() && "BuildDeclRefExpr failed for Field!");
+
+      Value = CreateBuiltinUnaryOp(KWLoc, UO_AddrOf, FDRE.get()).get();
+      if (!Value)
+        return ExprError();
+      VType = Value->getType();    // get the member pointer type
+
+      break;
+                                   }
+
+    case RTT_ObjectMemberFieldRef: {
+      // Try to get the requested member field
+      FieldDecl *FD = GetRecordMemberFieldAtIndexPos(*this, KWLoc, TSInfo, IdxArgs[1]);
+      if (!FD)
+        return ExprError();
+
+      Expr* BaseExpr = IdxArgs[0];
+      DeclRefExpr* BaseDRE = dyn_cast<DeclRefExpr>(BaseExpr);
+      if (!BaseDRE ||
+          !Context.hasSameUnqualifiedType(BaseDRE->getType().getNonReferenceType(),
+                                          T.getNonReferenceType()))
+      {
+        Diag(BaseExpr->getLocStart(), diag::err_object_not_of_correct_type_declref)
+             << T << BaseExpr->getType()
+             << TSInfo->getTypeLoc().getSourceRange() << BaseExpr->getSourceRange();
+        return ExprError();
+      }
+
+      QualType ClassType = Context.getTypeDeclType(FD->getParent());
+      NestedNameSpecifier *Qualifier
+        = NestedNameSpecifier::Create(Context, 0, false,
+        ClassType.getTypePtr());
+      CXXScopeSpec SS;
+      SS.MakeTrivial(Context, Qualifier, KWLoc);
+
+      // Always allows access -- working??
+      ExprResult FDRE = BuildFieldReferenceExpr(BaseExpr, false, SS, FD,
+                              /*FoundDecl Access*/ DeclAccessPair::make(FD, AS_public),
+                              DeclarationNameInfo(FD->getDeclName(), KWLoc));
+
+      // Important, mark the base expr as odr-used!
+      MarkDeclRefReferenced(BaseDRE);
+
+      Value = FDRE.get();
+      if (!Value)
+        return ExprError();
+
+      VType = Value->getType();      // get the member pointer type
+      VKind = Value->getValueKind(); // might be l- or r-value ref!
+
+      break;
+                                   }
+
+    case RTT_RecordBaseAccessSpec: {
+      // Try to get the requested base specifier
+      const CXXBaseSpecifier *BS = GetRecordBaseAtIndexPos(*this, KWLoc, TSInfo, IdxArgs[0]);
+      if (!BS)
+        return ExprError();
+
+      // What access is allowed for this base specifier?
+      Value = AllocateConvertedAccessSpecifier(Context, KWLoc, VType, BS->getAccessSpecifier());
+      break;
+                                   }
+    case RTT_RecordMemberFieldAccessSpec: {
+      // Try to get the requested member field
+      FieldDecl *FD = GetRecordMemberFieldAtIndexPos(*this, KWLoc, TSInfo, IdxArgs[0]);
+      if (!FD)
+        return ExprError();
+
+      // What access is specified for this field?
+      Value = AllocateConvertedAccessSpecifier(Context, KWLoc, VType, FD->getAccess());
+      break;
+                                          }
+
+    case RTT_RecordMemberFieldIsMutable: {
+      // Try to get the requested member field
+      FieldDecl *FD = GetRecordMemberFieldAtIndexPos(*this, KWLoc, TSInfo, IdxArgs[0]);
+      if (!FD)
+        return ExprError();
+
+      Value = new (Context) CXXBoolLiteralExpr(FD->isMutable(), VType, KWLoc);
+      break;
+                                         }
+    case RTT_RecordMemberFieldIsBitField: {
+      // Try to get the requested member field
+      FieldDecl *FD = GetRecordMemberFieldAtIndexPos(*this, KWLoc, TSInfo, IdxArgs[0]);
+      if (!FD)
+        return ExprError();
+
+      Value = new (Context) CXXBoolLiteralExpr(FD->isBitField(), VType, KWLoc);
+      break;
+                                          }
+    case RTT_RecordMemberFieldBitFieldSize: {
+      // Try to get the requested member field
+      FieldDecl *FD = GetRecordMemberFieldAtIndexPos(*this, KWLoc, TSInfo, IdxArgs[0]);
+      if (!FD)
+        return ExprError();
+
+      unsigned val = FD->getBitWidthValue(Context);
+      llvm::APSInt apval = Context.MakeIntValue(val, VType);
+      Value = IntegerLiteral::Create(Context, apval, VType, KWLoc);
+      break;
+                                            }
+    case RTT_RecordMemberFieldIsAnonBitField: {
+      // Try to get the requested member field
+      FieldDecl *FD = GetRecordMemberFieldAtIndexPos(*this, KWLoc, TSInfo, IdxArgs[0]);
+      if (!FD)
+        return ExprError();
+
+      Value = new (Context) CXXBoolLiteralExpr(FD->isUnnamedBitfield(), VType, KWLoc);
+      break;
+                                              }
+    case RTT_RecordMemberFieldIsReference: {
+      // Try to get the requested member field
+      FieldDecl *FD = GetRecordMemberFieldAtIndexPos(*this, KWLoc, TSInfo, IdxArgs[0]);
+      if (!FD)
+        return ExprError();
+
+      Value = new (Context) CXXBoolLiteralExpr(FD->getType()->getAs<ReferenceType>(), VType, KWLoc);
+      break;
+                                              }
+
+
+    default:
+      llvm_unreachable("Unknown type trait or not implemented");
+    }  // switch
+
+    // forward all the expr properties
+    VType = Value->getType();
+    VKind = Value->getValueKind();
+    OKind = Value->getObjectKind();
+
+  }  // if dependent
+
+  assert((!Value || VKind == Value->getValueKind()) && "VKind != Value->getValueKind()!");
+
+  return ReflectionTypeTraitExpr::Create(Context, KWLoc, RTT, TSInfo,
+                  IdxArgs, RParen, VType, Value, VKind, OKind);
+}
+
 /// \brief Determine whether T has a non-trivial Objective-C lifetime in
 /// ARC mode.
 static bool hasNontrivialObjCLifetime(QualType T) {
@@ -3986,7 +4753,7 @@ ExprResult Sema::BuildArrayTypeTrait(ArrayTypeTrait ATT,
   // FIXME: This should likely be tracked as an APInt to remove any host
   // assumptions about the width of size_t on the target.
   uint64_t Value = 0;
-  if (!T->isDependentType())
+  if (!T->isDependentType() && (!DimExpr || !DimExpr->isValueDependent()))
     Value = EvaluateArrayTypeTrait(*this, ATT, T, DimExpr, KWLoc);
 
   // While the specification for these traits from the Embarcadero C++

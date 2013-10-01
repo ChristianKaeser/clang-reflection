@@ -1505,6 +1505,18 @@ void ASTStmtWriter::VisitBinaryTypeTraitExpr(BinaryTypeTraitExpr *E) {
   Code = serialization::EXPR_BINARY_TYPE_TRAIT;
 }
 
+void ASTStmtWriter::VisitReflectionTypeTraitExpr(ReflectionTypeTraitExpr *E) {
+  VisitExpr(E);
+  Record.push_back(E->getNumIndex()); // Has to be first!
+  Record.push_back(E->getTrait());
+  Writer.AddSourceRange(E->getSourceRange(), Record);
+  Writer.AddTypeSourceInfo(E->getQueriedTypeSourceInfo(), Record);
+  Writer.AddStmt(E->getValue());
+  for (unsigned I = 0, Len = E->getNumIndex(); I != Len; ++I)
+    Writer.AddStmt(E->getIndex(I));
+  Code = serialization::EXPR_REFLECTION_TYPE_TRAIT;
+}
+
 void ASTStmtWriter::VisitTypeTraitExpr(TypeTraitExpr *E) {
   VisitExpr(E);
   Record.push_back(E->TypeTraitExprBits.NumArgs);

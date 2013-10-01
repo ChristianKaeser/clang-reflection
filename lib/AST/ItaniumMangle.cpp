@@ -909,6 +909,7 @@ void CXXNameMangler::mangleUnresolvedPrefix(NestedNameSpecifier *qualifier,
     case Type::Decltype:
     case Type::TemplateTypeParm:
     case Type::UnaryTransform:
+    case Type::ReflectionTransform:
     case Type::SubstTemplateTypeParm:
     unresolvedType:
       assert(!qualifier->getPrefix());
@@ -2455,6 +2456,16 @@ void CXXNameMangler::mangleType(const UnaryTransformType *T) {
   mangleType(T->getUnderlyingType());
 }
 
+void CXXNameMangler::mangleType(const ReflectionTransformType *T) {
+  // Dependent mangling obviously not possible in a useful way.. TODO?
+  if (T->isDependentType()) {
+    assert(0 && "Dependent ReflectionTransformType mangling not implemented!");
+    return;
+  }
+
+  mangleType(T->getReflectedType());
+}
+
 void CXXNameMangler::mangleType(const AutoType *T) {
   QualType D = T->getDeducedType();
   // <builtin-type> ::= Da  # dependent auto
@@ -2610,6 +2621,7 @@ recurse:
   case Expr::StmtExprClass:
   case Expr::UnaryTypeTraitExprClass:
   case Expr::BinaryTypeTraitExprClass:
+  case Expr::ReflectionTypeTraitExprClass:
   case Expr::TypeTraitExprClass:
   case Expr::ArrayTypeTraitExprClass:
   case Expr::ExpressionTraitExprClass:

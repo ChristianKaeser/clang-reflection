@@ -596,6 +596,8 @@ void DeclPrinter::VisitFriendDecl(FriendDecl *D) {
     for (unsigned i = 0; i < NumTPLists; ++i)
       PrintTemplateParameters(D->getFriendTypeTemplateParameterList(i));
     Out << "friend ";
+    if (D->isFriendUsingMode())
+      Out << "using ";
     Out << " " << TSI->getType().getAsString(Policy);
   }
   else if (FunctionDecl *FD =
@@ -611,6 +613,8 @@ void DeclPrinter::VisitFriendDecl(FriendDecl *D) {
   else if (ClassTemplateDecl *CTD =
            dyn_cast<ClassTemplateDecl>(D->getFriendDecl())) {
     Out << "friend ";
+    if (D->isFriendUsingMode())
+      Out << "using ";
     VisitRedeclarableTemplateDecl(CTD);
   }
 }

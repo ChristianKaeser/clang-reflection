@@ -1128,6 +1128,11 @@ public:
   QualType getUnaryTransformType(QualType BaseType, QualType UnderlyingType,
                                  UnaryTransformType::UTTKind UKind) const;
 
+  QualType getReflectionTransformType(QualType BaseType, QualType ReflType,
+                                      ArrayRef<Expr*> Exprs,
+                                      ReflectionTransformType::RTTKind Kind)
+                                      const;
+
   /// \brief C++11 deduced auto type.
   QualType getAutoType(QualType DeducedType, bool IsDecltypeAuto,
                        bool IsDependent) const;

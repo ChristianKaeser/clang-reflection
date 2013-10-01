@@ -1080,6 +1080,7 @@ void ASTDeclWriter::VisitFriendDecl(FriendDecl *D) {
                                     Record);
   Writer.AddDeclRef(D->getNextFriend(), Record);
   Record.push_back(D->UnsupportedFriend);
+  Writer.AddSourceLocation(D->getFriendUsingLoc(), Record);
   Writer.AddSourceLocation(D->FriendLoc, Record);
   Code = serialization::DECL_FRIEND;
 }

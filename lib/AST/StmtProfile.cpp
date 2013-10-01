@@ -961,6 +961,15 @@ void StmtProfiler::VisitBinaryTypeTraitExpr(const BinaryTypeTraitExpr *S) {
   VisitType(S->getRhsType());
 }
 
+void StmtProfiler::VisitReflectionTypeTraitExpr(const ReflectionTypeTraitExpr *S) {
+  VisitExpr(S);
+  ID.AddInteger(S->getTrait());
+  VisitType(S->getQueriedType());
+  ID.AddInteger(S->getNumIndex());
+  for (unsigned I = 0, N = S->getNumIndex(); I != N; ++I)
+    VisitExpr(S->getIndex(I));
+}
+
 void StmtProfiler::VisitTypeTraitExpr(const TypeTraitExpr *S) {
   VisitExpr(S);
   ID.AddInteger(S->getTrait());

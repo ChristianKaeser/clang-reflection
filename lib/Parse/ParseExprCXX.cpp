@@ -2716,6 +2716,44 @@ static ExpressionTrait ExpressionTraitFromTokKind(tok::TokenKind kind) {
   }
 }
 
+static ReflectionTypeTrait ReflectionTypeTraitFromTokKind(tok::TokenKind kind) {
+  switch(kind) {
+  default: llvm_unreachable("Not a known reflection type trait.");
+  case tok::kw___enumerator_count:                 return RTT_EnumeratorCount;
+  case tok::kw___enumerator_value:                 return RTT_EnumeratorValue;
+  case tok::kw___enumerator_name:                  return RTT_EnumeratorName;
+
+  case tok::kw___enum_minimum_value:               return RTT_EnumMinimumValue;
+  case tok::kw___enum_maximum_value:               return RTT_EnumMaximumValue;
+  case tok::kw___enum_value_dup_count:             return RTT_EnumValueDupCount;
+  case tok::kw___enum_has_gaps_in_value_range:     return RTT_EnumHasGapsInValueRange;
+  case tok::kw___enum_value_monotonicity:          return RTT_EnumValueMonotonicity;
+  case tok::kw___enum_value_pop_count:             return RTT_EnumValuePopCount;
+
+  case tok::kw___type_canonical_name:              return RTT_TypeCanonicalName;
+  case tok::kw___type_sugared_name:                return RTT_TypeSugaredName;
+  case tok::kw___type_is_unnamed:                  return RTT_TypeIsUnnamed;
+
+  case tok::kw___record_base_access_spec:          return RTT_RecordBaseAccessSpec;
+  case tok::kw___record_base_count:                return RTT_RecordBaseCount;
+  case tok::kw___record_base_is_virtual:           return RTT_RecordBaseIsVirtual;
+  case tok::kw___record_virtual_base_count:        return RTT_RecordVirtualBaseCount;
+
+  case tok::kw___record_member_field_count:        return RTT_RecordMemberFieldCount;
+  case tok::kw___record_member_field_ptr:          return RTT_RecordMemberFieldPtr;
+  case tok::kw___object_member_field_ref:          return RTT_ObjectMemberFieldRef;
+  case tok::kw___record_member_field_name:         return RTT_RecordMemberFieldName;
+  case tok::kw___record_member_field_access_spec:  return RTT_RecordMemberFieldAccessSpec;
+  case tok::kw___record_member_field_is_mutable:   return RTT_RecordMemberFieldIsMutable;
+  case tok::kw___record_member_field_is_bit_field: return RTT_RecordMemberFieldIsBitField;
+  case tok::kw___record_member_field_bit_field_size: return RTT_RecordMemberFieldBitFieldSize;
+  case tok::kw___record_member_field_is_anon_bit_field: return RTT_RecordMemberFieldIsAnonBitField;
+  case tok::kw___record_member_field_is_reference: return RTT_RecordMemberFieldIsReference;
+
+  }
+}
+
+
 /// ParseUnaryTypeTrait - Parse the built-in unary type-trait
 /// pseudo-functions that allow implementation of the TR1/C++0x type traits
 /// templates.
@@ -2780,6 +2818,110 @@ ExprResult Parser::ParseBinaryTypeTrait() {
 
   return Actions.ActOnBinaryTypeTrait(BTT, Loc, LhsTy.get(), RhsTy.get(),
                                       T.getCloseLocation());
+}
+
+/// ParseReflectionTrait - Parse ....
+///
+///       primary-expression:
+///             '__enumerator_count' '(' (enum-)type-id ')'
+///             '__enumerator_value' '(' type-id ',' expression ')'
+///
+ExprResult Parser::ParseReflectionTypeTrait() {
+  ReflectionTypeTrait RTT = ReflectionTypeTraitFromTokKind(Tok.getKind());
+  SourceLocation Loc = ConsumeToken();
+
+  BalancedDelimiterTracker Parens(*this, tok::l_paren);
+  if (Parens.expectAndConsume(diag::err_expected_lparen))
+    return ExprError();
+
+  TypeResult Ty = ParseTypeName();
+  if (Ty.isInvalid()) {
+    Parens.skipToEnd();
+    return ExprError();
+  }
+
+  SmallVector<Expr*, 2> Args;
+
+  switch (RTT) {
+  case RTT_EnumeratorCount:
+
+  case RTT_EnumMinimumValue:
+  case RTT_EnumMaximumValue:
+  case RTT_EnumValueDupCount:
+  case RTT_EnumHasGapsInValueRange:
+  case RTT_EnumValueMonotonicity:
+  case RTT_EnumValuePopCount:
+
+  case RTT_TypeCanonicalName:
+  case RTT_TypeSugaredName:
+  case RTT_TypeIsUnnamed:
+
+  case RTT_RecordBaseCount:
+  case RTT_RecordVirtualBaseCount:
+
+  case RTT_RecordMemberFieldCount:
+
+    // Nothing more to parse
+    break;
+
+
+    // 2 arguments...
+  case RTT_ObjectMemberFieldRef:
+    {
+      // Parse comma and then expression
+      if (ExpectAndConsume(tok::comma, diag::err_expected_comma)) {
+        Parens.skipToEnd();
+        return ExprError();
+      }
+
+      ExprResult IdxExpr = ParseAssignmentExpression();
+      if (IdxExpr.isInvalid()) {
+        Parens.skipToEnd();
+        return ExprError();
+      }
+      Args.push_back(IdxExpr.get());
+
+      // fall through!
+    }
+
+    // 1+ arguments...
+  case RTT_EnumeratorValue:
+  case RTT_EnumeratorName:
+
+  case RTT_RecordBaseAccessSpec:
+  case RTT_RecordBaseIsVirtual:
+
+  case RTT_RecordMemberFieldPtr:
+  case RTT_RecordMemberFieldAccessSpec:
+  case RTT_RecordMemberFieldName:
+  case RTT_RecordMemberFieldIsMutable:
+  case RTT_RecordMemberFieldIsBitField:
+  case RTT_RecordMemberFieldBitFieldSize:
+  case RTT_RecordMemberFieldIsAnonBitField:
+  case RTT_RecordMemberFieldIsReference:
+    {
+    // Parse comma and then expression
+    if (ExpectAndConsume(tok::comma, diag::err_expected_comma)) {
+      Parens.skipToEnd();
+      return ExprError();
+    }
+
+    ExprResult IdxExpr = ParseAssignmentExpression();
+    if (IdxExpr.isInvalid()) {
+      Parens.skipToEnd();
+      return ExprError();
+    }
+    Args.push_back(IdxExpr.get());
+    break;
+    }
+
+  default:
+    llvm_unreachable("Invalid ReflectionTypeTrait!");
+  }
+
+  Parens.consumeClose();
+  return Actions.ActOnReflectionTypeTrait(RTT, Loc, Ty.get(),
+    Args, Parens.getCloseLocation());
 }
 
 /// \brief Parse the built-in type-trait pseudo-functions that allow 
