@@ -377,10 +377,10 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
     return Cl::CL_LValue;
 
   // Mostly RValue, but in StringLiteral case is LValue
+  // .. plus some much more complicated cases like member access
   case Expr::ReflectionTypeTraitExprClass:
-    if (E->isLValue())   // should be stored correctly
-      return Cl::CL_LValue;
-    return Cl::CL_PRValue;
+    // okay??
+    return ClassifyInternal(Ctx, cast<ReflectionTypeTraitExpr>(E)->getValue());
 
   case Expr::PackExpansionExprClass:
     return ClassifyInternal(Ctx, cast<PackExpansionExpr>(E)->getPattern());
