@@ -1625,7 +1625,6 @@ struct ReflectionTransformTypeLocInfo {
   // FIXME: Implementation could be improved...
   SourceLocation KWLoc, LParenLoc, RParenLoc;
   TypeSourceInfo *ReflTInfo;
-  //SourceLocation ArgLoc[2];  // ???
 };
 
 class ReflectionTransformTypeLoc : public ConcreteTypeLoc<UnqualTypeLoc,
@@ -1649,8 +1648,10 @@ public:
     getLocalData()->ReflTInfo = TInfo;
   }
 
-  // ToDo FIXME...
-  //void setArgLoc(..)
+  // simply take arguments from Type..
+  ArrayRef<Expr*> getParamExprs() const {
+    return getTypePtr()->getParamExprs();
+  }
 
   SourceRange getLocalSourceRange() const {
     return SourceRange(getKWLoc(), getRParenLoc());

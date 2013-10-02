@@ -4647,11 +4647,14 @@ QualType TreeTransform<Derived>::TransformReflectionTransformType(
   TypeLocBuilder &TLB,
   ReflectionTransformTypeLoc TL) {
     QualType Result = TL.getType();
-    if (Result->isDependentType()) {
-      const ReflectionTransformType *T = TL.getTypePtr();
-      TypeSourceInfo *NewBaseTS =
-        getDerived().TransformType(TL.getReflTInfo());
 
+    // TODO: really correct?
+
+    const ReflectionTransformType *T = TL.getTypePtr();
+    TypeSourceInfo *NewBaseTS =
+      getDerived().TransformType(TL.getReflTInfo());
+
+    if (getDerived().AlwaysRebuild() || Result->isDependentType()) {
       SmallVector<Expr*, 1> Args;
       ArrayRef<Expr*> OArgs = T->getParamExprs();
       for (ArrayRef<Expr*>::const_iterator I = OArgs.begin(), E = OArgs.end();
@@ -4676,8 +4679,8 @@ QualType TreeTransform<Derived>::TransformReflectionTransformType(
     ReflectionTransformTypeLoc NewTL = TLB.push<ReflectionTransformTypeLoc>(Result);
     NewTL.setKWLoc(TL.getKWLoc());
     NewTL.setParensRange(TL.getParensRange());
-    NewTL.setReflTInfo(TL.getReflTInfo());
-    // setArgLoc(....
+    NewTL.setReflTInfo(NewBaseTS);
+    // params are simply fetched from Type..
     return Result;
 }
 

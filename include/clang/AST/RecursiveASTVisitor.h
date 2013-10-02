@@ -1191,6 +1191,11 @@ DEF_TRAVERSE_TYPELOC(UnaryTransformType, {
 
 DEF_TRAVERSE_TYPELOC(ReflectionTransformType, {
     TRY_TO(TraverseTypeLoc(TL.getReflTInfo()->getTypeLoc()));
+    ArrayRef<Expr*> Params = TL.getParamExprs();
+    for (ArrayRef<Expr*>::const_iterator I = Params.begin(), E = Params.end();
+         I != E; ++I) {
+           TRY_TO(TraverseStmt(*I));
+    }
   })
 
 DEF_TRAVERSE_TYPELOC(AutoType, {

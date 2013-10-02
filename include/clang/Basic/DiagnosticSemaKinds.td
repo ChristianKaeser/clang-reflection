@@ -5660,7 +5660,7 @@ def err_reflection_field_index_expr_not_constant_integer : Error<
 def err_reflection_field_index_out_of_range : Error<
   "field index is out-of-range (only %0 field%s0 for type %1)">;
 def err_object_not_of_correct_type_declref : Error<
-  "argument has to be a DeclRefExpr to an instance of type %0 (is %1)">;
+  "argument has to be a reference to an instance of type %0 (is %1)">;
 
 def err_incomplete_type_used_in_type_trait_expr : Error<
   "incomplete type %0 used in type trait expression">;

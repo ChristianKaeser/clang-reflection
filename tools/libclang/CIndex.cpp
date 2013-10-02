@@ -1579,6 +1579,7 @@ bool CursorVisitor::VisitUnaryTransformTypeLoc(UnaryTransformTypeLoc TL) {
 bool CursorVisitor::VisitReflectionTransformTypeLoc(ReflectionTransformTypeLoc TL) {
   if (TypeSourceInfo *TSInfo = TL.getReflTInfo())
     return Visit(TSInfo->getTypeLoc());
+  // TODO: visit param exprs
 
   return false;
 }

@@ -1845,7 +1845,7 @@ ReflectionTransformType::ReflectionTransformType(QualType BaseTy,
                                                  RTTKind Kind,
                                                  ArrayRef<Expr*> Args,
                                                  QualType CanonicalTy)
-  : Type(ReflectionTransform, CanonicalTy, BaseTy->isDependentType(),
+  : Type(ReflectionTransform, CanonicalTy, ReflectedTy->isDependentType(),
   BaseTy->isInstantiationDependentType(),
   BaseTy->isVariablyModifiedType(),
   BaseTy->containsUnexpandedParameterPack()),

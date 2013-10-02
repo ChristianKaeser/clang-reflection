@@ -4212,9 +4212,7 @@ ExprResult Sema::BuildReflectionTypeTrait(ReflectionTypeTrait RTT,
         return ExprError();
 
       Expr* BaseExpr = IdxArgs[0];
-      DeclRefExpr* BaseDRE = dyn_cast<DeclRefExpr>(BaseExpr);
-      if (!BaseDRE ||
-          !Context.hasSameUnqualifiedType(BaseDRE->getType().getNonReferenceType(),
+      if (!Context.hasSameUnqualifiedType(BaseExpr->getType().getNonReferenceType(),
                                           T.getNonReferenceType()))
       {
         Diag(BaseExpr->getLocStart(), diag::err_object_not_of_correct_type_declref)
@@ -4236,7 +4234,7 @@ ExprResult Sema::BuildReflectionTypeTrait(ReflectionTypeTrait RTT,
                               DeclarationNameInfo(FD->getDeclName(), KWLoc));
 
       // Important, mark the base expr as odr-used!
-      MarkDeclRefReferenced(BaseDRE);
+      MarkDeclarationsReferencedInExpr(BaseExpr);
 
       Value = FDRE.get();
       if (!Value)
