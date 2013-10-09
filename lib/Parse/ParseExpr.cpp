@@ -1221,9 +1221,9 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
   case tok::kw___is_trivially_assignable:
     return ParseBinaryTypeTrait();
 
-  case tok::kw___enumerator_count:
+  case tok::kw___enumerator_list_size:
   case tok::kw___enumerator_value:
-  case tok::kw___enumerator_name:
+  case tok::kw___enumerator_identifier:
   case tok::kw___enum_minimum_value:
   case tok::kw___enum_maximum_value:
   case tok::kw___enum_value_dup_count:
@@ -1243,7 +1243,7 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
   case tok::kw___record_member_field_count:
   case tok::kw___record_member_field_ptr:
   case tok::kw___object_member_field_ref:
-  case tok::kw___record_member_field_name:
+  case tok::kw___record_member_field_identifier:
   case tok::kw___record_member_field_access_spec:
   case tok::kw___record_member_field_is_mutable:
   case tok::kw___record_member_field_is_bit_field:

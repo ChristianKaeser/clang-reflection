@@ -3821,7 +3821,7 @@ ExprResult Sema::BuildReflectionTypeTrait(ReflectionTypeTrait RTT,
   /// TODO: remove this switch?
   // try to initialize the expr type if possible
   switch (RTT) {
-  case RTT_EnumeratorCount:
+  case RTT_EnumeratorListSize:
   case RTT_EnumValueDupCount:
   case RTT_RecordBaseCount:
   case RTT_RecordVirtualBaseCount:
@@ -3867,10 +3867,10 @@ ExprResult Sema::BuildReflectionTypeTrait(ReflectionTypeTrait RTT,
     // Exact type is dependent on everything, just forward...
     break;
 
-  case RTT_EnumeratorName:
+  case RTT_EnumeratorIdentifier:
   case RTT_TypeCanonicalName:
   case RTT_TypeSugaredName:
-  case RTT_RecordMemberFieldName:
+  case RTT_RecordMemberFieldIdentifier:
     // String literals are lvalues
     VKind = VK_LValue;
     // The result type depends on the length of the string -> set later
@@ -3910,7 +3910,7 @@ ExprResult Sema::BuildReflectionTypeTrait(ReflectionTypeTrait RTT,
     //}
 
     switch (RTT) {
-    case RTT_EnumeratorCount: {
+    case RTT_EnumeratorListSize: {
       // T has to be a enum type
       const EnumDecl *ED = RequireCompleteEnumType(*this, KWLoc, TSInfo);
       if (!ED)
@@ -4131,7 +4131,7 @@ ExprResult Sema::BuildReflectionTypeTrait(ReflectionTypeTrait RTT,
                                         }
 
 
-    case RTT_EnumeratorName: {
+    case RTT_EnumeratorIdentifier: {
       // Try to get the requested EnumConstantDecl
       const EnumConstantDecl *ECD = GetEnumeratorDeclAtIndexPos(*this, KWLoc, TSInfo, IdxArgs[0]);
       if (!ECD)
@@ -4163,7 +4163,7 @@ ExprResult Sema::BuildReflectionTypeTrait(ReflectionTypeTrait RTT,
       break;
                               }
 
-    case RTT_RecordMemberFieldName: {
+    case RTT_RecordMemberFieldIdentifier: {
       // Try to get the requested member field
       const FieldDecl *FD = GetRecordMemberFieldAtIndexPos(*this, KWLoc, TSInfo, IdxArgs[0]);
       if (!FD)

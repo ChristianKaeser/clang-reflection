@@ -2719,9 +2719,9 @@ static ExpressionTrait ExpressionTraitFromTokKind(tok::TokenKind kind) {
 static ReflectionTypeTrait ReflectionTypeTraitFromTokKind(tok::TokenKind kind) {
   switch(kind) {
   default: llvm_unreachable("Not a known reflection type trait.");
-  case tok::kw___enumerator_count:                 return RTT_EnumeratorCount;
+  case tok::kw___enumerator_list_size:             return RTT_EnumeratorListSize;
   case tok::kw___enumerator_value:                 return RTT_EnumeratorValue;
-  case tok::kw___enumerator_name:                  return RTT_EnumeratorName;
+  case tok::kw___enumerator_identifier:            return RTT_EnumeratorIdentifier;
 
   case tok::kw___enum_minimum_value:               return RTT_EnumMinimumValue;
   case tok::kw___enum_maximum_value:               return RTT_EnumMaximumValue;
@@ -2742,7 +2742,7 @@ static ReflectionTypeTrait ReflectionTypeTraitFromTokKind(tok::TokenKind kind) {
   case tok::kw___record_member_field_count:        return RTT_RecordMemberFieldCount;
   case tok::kw___record_member_field_ptr:          return RTT_RecordMemberFieldPtr;
   case tok::kw___object_member_field_ref:          return RTT_ObjectMemberFieldRef;
-  case tok::kw___record_member_field_name:         return RTT_RecordMemberFieldName;
+  case tok::kw___record_member_field_identifier:   return RTT_RecordMemberFieldIdentifier;
   case tok::kw___record_member_field_access_spec:  return RTT_RecordMemberFieldAccessSpec;
   case tok::kw___record_member_field_is_mutable:   return RTT_RecordMemberFieldIsMutable;
   case tok::kw___record_member_field_is_bit_field: return RTT_RecordMemberFieldIsBitField;
@@ -2843,7 +2843,7 @@ ExprResult Parser::ParseReflectionTypeTrait() {
   SmallVector<Expr*, 2> Args;
 
   switch (RTT) {
-  case RTT_EnumeratorCount:
+  case RTT_EnumeratorListSize:
 
   case RTT_EnumMinimumValue:
   case RTT_EnumMaximumValue:
@@ -2886,14 +2886,14 @@ ExprResult Parser::ParseReflectionTypeTrait() {
 
     // 1+ arguments...
   case RTT_EnumeratorValue:
-  case RTT_EnumeratorName:
+  case RTT_EnumeratorIdentifier:
 
   case RTT_RecordBaseAccessSpec:
   case RTT_RecordBaseIsVirtual:
 
   case RTT_RecordMemberFieldPtr:
   case RTT_RecordMemberFieldAccessSpec:
-  case RTT_RecordMemberFieldName:
+  case RTT_RecordMemberFieldIdentifier:
   case RTT_RecordMemberFieldIsMutable:
   case RTT_RecordMemberFieldIsBitField:
   case RTT_RecordMemberFieldBitFieldSize:

@@ -98,9 +98,9 @@ namespace clang {
   // \brief Names for experimental (type) traits that take one type
   // parameter and 0+ integral parameters and return any kind of APValue
   enum ReflectionTypeTrait {
-    RTT_EnumeratorCount,
+    RTT_EnumeratorListSize,
     RTT_EnumeratorValue,
-    RTT_EnumeratorName,
+    RTT_EnumeratorIdentifier,
 
     RTT_EnumMinimumValue,
     RTT_EnumMaximumValue,
@@ -122,7 +122,7 @@ namespace clang {
     RTT_RecordMemberFieldPtr,
     RTT_ObjectMemberFieldRef,
     RTT_RecordMemberFieldAccessSpec,
-    RTT_RecordMemberFieldName,
+    RTT_RecordMemberFieldIdentifier,
     RTT_RecordMemberFieldIsMutable,
     RTT_RecordMemberFieldIsBitField,
     RTT_RecordMemberFieldBitFieldSize,

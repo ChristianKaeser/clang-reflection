@@ -1753,9 +1753,9 @@ static const char *getTypeTraitName(ArrayTypeTrait ATT) {
 
 static const char *getTypeTraitName(ReflectionTypeTrait RTT) {
   switch (RTT) {
-  case RTT_EnumeratorCount:        return "__enumerator_count";
+  case RTT_EnumeratorListSize:     return "__enumerator_list_size";
   case RTT_EnumeratorValue:        return "__enumerator_value";
-  case RTT_EnumeratorName:         return "__enumerator_name";
+  case RTT_EnumeratorIdentifier:   return "__enumerator_identifier";
 
   case RTT_EnumMinimumValue:       return "__enum_minimum_value";
   case RTT_EnumMaximumValue:       return "__enum_maximum_value";
@@ -1776,7 +1776,8 @@ static const char *getTypeTraitName(ReflectionTypeTrait RTT) {
   case RTT_RecordMemberFieldCount: return "__record_member_field_count";
   case RTT_RecordMemberFieldPtr:   return "__record_member_field_ptr";
   case RTT_ObjectMemberFieldRef:   return "__object_member_field_ref";
-  case RTT_RecordMemberFieldName:  return "__record_member_field_name";
+  case RTT_RecordMemberFieldIdentifier:
+    return "__record_member_field_identifier";
   case RTT_RecordMemberFieldAccessSpec:
     return "__record_member_field_access_spec";
   case RTT_RecordMemberFieldIsMutable:
