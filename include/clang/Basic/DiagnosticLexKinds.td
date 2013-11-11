@@ -422,7 +422,7 @@ def warn_pragma_warning_spec_invalid :
           " 'error', 'once', 'suppress', 1, 2, 3, or 4">,
   InGroup<UnknownPragmas>;
 def warn_pragma_warning_push_level :
-  ExtWarn<"#pragma warning(push, level) requires a level between 1 and 4">,
+  ExtWarn<"#pragma warning(push, level) requires a level between 0 and 4">,
   InGroup<UnknownPragmas>;
 def warn_pragma_warning_expected_number :
   ExtWarn<"#pragma warning expected a warning number">,
@@ -551,8 +551,6 @@ def err_mmap_expected_mmap_file : Error<"expected a module map file name">;
 def err_mmap_module_redefinition : Error<
   "redefinition of module '%0'">;
 def note_mmap_prev_definition : Note<"previously defined here">;
-def err_mmap_header_conflict : Error<
-  "header '%0' is already part of module '%1'">;
 def err_mmap_header_not_found : Error<
   "%select{|umbrella }0header '%1' not found">;
 def err_mmap_umbrella_dir_not_found : Error<

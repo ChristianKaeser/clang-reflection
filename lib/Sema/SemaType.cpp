@@ -2524,12 +2524,11 @@ getCCForDeclaratorChunk(Sema &S, Declarator &D,
       assert(D.isFunctionDeclarator());
 
       // If we're inside a record, we're declaring a method, but it could be
-      // static.
+      // explicitly or implicitly static.
       IsCXXInstanceMethod =
-          (D.getContext() == Declarator::MemberContext &&
-           D.getDeclSpec().getStorageClassSpec() != DeclSpec::SCS_typedef &&
-           D.getDeclSpec().getStorageClassSpec() != DeclSpec::SCS_static &&
-           !D.getDeclSpec().isFriendSpecified());
+          D.isFirstDeclarationOfMember() &&
+          D.getDeclSpec().getStorageClassSpec() != DeclSpec::SCS_typedef &&
+          !D.isStaticMember();
     }
   }
 
@@ -4583,18 +4582,26 @@ static bool handleFunctionTypeAttr(TypeProcessingState &state,
     }
   }
 
-  // Diagnose the use of X86 fastcall on varargs or unprototyped functions.
-  if (CC == CC_X86FastCall) {
-    if (isa<FunctionNoProtoType>(fn)) {
-      S.Diag(attr.getLoc(), diag::err_cconv_knr)
-        << FunctionType::getNameForCallConv(CC);
+  // Diagnose use of callee-cleanup calling convention on variadic functions.
+  if (isCalleeCleanup(CC)) {
+    const FunctionProtoType *FnP = dyn_cast<FunctionProtoType>(fn);
+    if (FnP && FnP->isVariadic()) {
+      unsigned DiagID = diag::err_cconv_varargs;
+      // stdcall and fastcall are ignored with a warning for GCC and MS
+      // compatibility.
+      if (CC == CC_X86StdCall || CC == CC_X86FastCall)
+        DiagID = diag::warn_cconv_varargs;
+
+      S.Diag(attr.getLoc(), DiagID) << FunctionType::getNameForCallConv(CC);
       attr.setInvalid();
       return true;
     }
+  }
 
-    const FunctionProtoType *FnP = cast<FunctionProtoType>(fn);
-    if (FnP->isVariadic()) {
-      S.Diag(attr.getLoc(), diag::err_cconv_varargs)
+  // Diagnose the use of X86 fastcall on unprototyped functions.
+  if (CC == CC_X86FastCall) {
+    if (isa<FunctionNoProtoType>(fn)) {
+      S.Diag(attr.getLoc(), diag::err_cconv_knr)
         << FunctionType::getNameForCallConv(CC);
       attr.setInvalid();
       return true;
@@ -4620,13 +4627,17 @@ static bool handleFunctionTypeAttr(TypeProcessingState &state,
   return true;
 }
 
-void Sema::adjustMemberFunctionCC(QualType &T) {
+void Sema::adjustMemberFunctionCC(QualType &T, bool IsStatic) {
   const FunctionType *FT = T->castAs<FunctionType>();
   bool IsVariadic = (isa<FunctionProtoType>(FT) &&
                      cast<FunctionProtoType>(FT)->isVariadic());
   CallingConv CC = FT->getCallConv();
+
+  // Only adjust types with the default convention.  For example, on Windows we
+  // should adjust a __cdecl type to __thiscall for instance methods, and a
+  // __thiscall type to __cdecl for static methods.
   CallingConv DefaultCC =
-      Context.getDefaultCallingConvention(IsVariadic, /*IsCXXMethod=*/false);
+      Context.getDefaultCallingConvention(IsVariadic, IsStatic);
   if (CC != DefaultCC)
     return;
 
@@ -4642,7 +4653,7 @@ void Sema::adjustMemberFunctionCC(QualType &T) {
 
   // FIXME: This loses sugar.  This should probably be fixed with an implicit
   // AttributedType node that adjusts the convention.
-  CC = Context.getDefaultCallingConvention(IsVariadic, /*IsCXXMethod=*/true);
+  CC = Context.getDefaultCallingConvention(IsVariadic, !IsStatic);
   FT = Context.adjustFunctionType(FT, FT->getExtInfo().withCallingConv(CC));
   FunctionTypeUnwrapper Unwrapped(*this, T);
   T = Unwrapped.wrap(*this, FT);

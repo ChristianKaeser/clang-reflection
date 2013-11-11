@@ -550,7 +550,7 @@ class RetainSummaryManager {
   ///  data in ScratchArgs.
   ArgEffects getArgEffects();
 
-  enum UnaryFuncKind { cfretain, cfrelease, cfmakecollectable };
+  enum UnaryFuncKind { cfretain, cfrelease, cfautorelease, cfmakecollectable };
   
   const RetainSummary *getUnarySummary(const FunctionType* FT,
                                        UnaryFuncKind func);
@@ -804,6 +804,10 @@ static bool isRelease(const FunctionDecl *FD, StringRef FName) {
   return FName.endswith("Release");
 }
 
+static bool isAutorelease(const FunctionDecl *FD, StringRef FName) {
+  return FName.endswith("Autorelease");
+}
+
 static bool isMakeCollectable(const FunctionDecl *FD, StringRef FName) {
   // FIXME: Remove FunctionDecl parameter.
   // FIXME: Is it really okay if MakeCollectable isn't a suffix?
@@ -814,7 +818,7 @@ static ArgEffect getStopTrackingHardEquivalent(ArgEffect E) {
   switch (E) {
   case DoNothing:
   case Autorelease:
-  case DecRefBridgedTransfered:
+  case DecRefBridgedTransferred:
   case IncRef:
   case IncRefMsg:
   case MakeCollectable:
@@ -1063,12 +1067,19 @@ RetainSummaryManager::getFunctionSummary(const FunctionDecl *FD) {
     if (RetTy->isPointerType()) {      
       // For CoreFoundation ('CF') types.
       if (cocoa::isRefType(RetTy, "CF", FName)) {
-        if (isRetain(FD, FName))
+        if (isRetain(FD, FName)) {
           S = getUnarySummary(FT, cfretain);
-        else if (isMakeCollectable(FD, FName))
+        } else if (isAutorelease(FD, FName)) {
+          S = getUnarySummary(FT, cfautorelease);
+          // The headers use cf_consumed, but we can fully model CFAutorelease
+          // ourselves.
+          AllowAnnotations = false;
+        } else if (isMakeCollectable(FD, FName)) {
           S = getUnarySummary(FT, cfmakecollectable);
-        else
+          AllowAnnotations = false;
+        } else {
           S = getCFCreateGetRuleSummary(FD);
+        }
 
         break;
       }
@@ -1171,9 +1182,10 @@ RetainSummaryManager::getUnarySummary(const FunctionType* FT,
 
   ArgEffect Effect;
   switch (func) {
-    case cfretain: Effect = IncRef; break;
-    case cfrelease: Effect = DecRef; break;
-    case cfmakecollectable: Effect = MakeCollectable; break;
+  case cfretain: Effect = IncRef; break;
+  case cfrelease: Effect = DecRef; break;
+  case cfautorelease: Effect = Autorelease; break;
+  case cfmakecollectable: Effect = MakeCollectable; break;
   }
 
   ScratchArgs = AF.add(ScratchArgs, 0, Effect);
@@ -2597,7 +2609,7 @@ void RetainCountChecker::checkPostStmt(const CastExpr *CE,
       AE = IncRef;
       break;      
     case clang::OBC_BridgeTransfer:
-      AE = DecRefBridgedTransfered;
+      AE = DecRefBridgedTransferred;
       break;
   }
   
@@ -2985,7 +2997,7 @@ RetainCountChecker::updateSymbol(ProgramStateRef state, SymbolRef sym,
       break;
 
     case DecRef:
-    case DecRefBridgedTransfered:
+    case DecRefBridgedTransferred:
     case DecRefAndStopTrackingHard:
       switch (V.getKind()) {
         default:
@@ -2995,8 +3007,8 @@ RetainCountChecker::updateSymbol(ProgramStateRef state, SymbolRef sym,
         case RefVal::Owned:
           assert(V.getCount() > 0);
           if (V.getCount() == 1)
-            V = V ^ (E == DecRefBridgedTransfered ? 
-                      RefVal::NotOwned : RefVal::Released);
+            V = V ^ (E == DecRefBridgedTransferred ? RefVal::NotOwned
+                                                   : RefVal::Released);
           else if (E == DecRefAndStopTrackingHard)
             return removeRefBinding(state, sym);
 
@@ -3104,11 +3116,13 @@ bool RetainCountChecker::evalCall(const CallExpr *CE, CheckerContext &C) const {
     canEval = II->isStr("NSMakeCollectable");
   } else if (ResultTy->isPointerType()) {
     // Handle: (CF|CG)Retain
+    //         CFAutorelease
     //         CFMakeCollectable
     // It's okay to be a little sloppy here (CGMakeCollectable doesn't exist).
     if (cocoa::isRefType(ResultTy, "CF", FName) ||
         cocoa::isRefType(ResultTy, "CG", FName)) {
-      canEval = isRetain(FD, FName) || isMakeCollectable(FD, FName);
+      canEval = isRetain(FD, FName) || isAutorelease(FD, FName) ||
+                isMakeCollectable(FD, FName);
     }
   }
         

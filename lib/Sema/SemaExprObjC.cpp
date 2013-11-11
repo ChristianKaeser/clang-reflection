@@ -410,10 +410,24 @@ static ExprResult CheckObjCCollectionLiteralElement(Sema &S, Expr *Element,
     }
   }
   if (ArrayLiteral)
-    if (ObjCStringLiteral *getString = dyn_cast<ObjCStringLiteral>(OrigElement)) {
-      if (getString->getString() && getString->getString()->getNumConcatenated() > 1)
-        S.Diag(Element->getLocStart(), diag::warn_concatenated_nsarray_literal)
-        << Element->getType();
+    if (ObjCStringLiteral *getString =
+          dyn_cast<ObjCStringLiteral>(OrigElement)) {
+      if (StringLiteral *SL = getString->getString()) {
+        unsigned numConcat = SL->getNumConcatenated();
+        if (numConcat > 1) {
+          // Only warn if the concatenated string doesn't come from a macro.
+          bool hasMacro = false;
+          for (unsigned i = 0; i < numConcat ; ++i)
+            if (SL->getStrTokenLoc(i).isMacroID()) {
+              hasMacro = true;
+              break;
+            }
+          if (!hasMacro)
+            S.Diag(Element->getLocStart(),
+                   diag::warn_concatenated_nsarray_literal)
+              << Element->getType();
+        }
+      }
     }
 
   // Make sure that the element has the type that the container factory 
@@ -588,7 +602,7 @@ ExprResult Sema::BuildObjCSubscriptExpression(SourceLocation RB, Expr *BaseExpr,
                                         Expr *IndexExpr,
                                         ObjCMethodDecl *getterMethod,
                                         ObjCMethodDecl *setterMethod) {
-  assert(!LangOpts.ObjCRuntime.isSubscriptPointerArithmetic());
+  assert(!LangOpts.isSubscriptPointerArithmetic());
 
   // We can't get dependent types here; our callers should have
   // filtered them out.
@@ -2271,6 +2285,11 @@ ExprResult Sema::BuildInstanceMessage(Expr *Receiver,
       }
       ReceiverType = Receiver->getType();
     } else if (getLangOpts().CPlusPlus) {
+      // The receiver must be a complete type.
+      if (RequireCompleteType(Loc, Receiver->getType(),
+                              diag::err_incomplete_receiver_type))
+        return ExprError();
+
       ExprResult result = PerformContextuallyConvertToObjCPointer(Receiver);
       if (result.isUsable()) {
         Receiver = result.take();

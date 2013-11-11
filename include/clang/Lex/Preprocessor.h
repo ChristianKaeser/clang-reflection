@@ -222,7 +222,10 @@ class Preprocessor : public RefCountedBase<Preprocessor> {
 
   /// \brief The module import path that we're currently processing.
   SmallVector<std::pair<IdentifierInfo *, SourceLocation>, 2> ModuleImportPath;
-  
+
+  /// \brief Whether the last token we lexed was an '@'.
+  bool LastTokenWasAt;
+
   /// \brief Whether the module import expectes an identifier next. Otherwise,
   /// it expects a '.' or ';'.
   bool ModuleImportExpectsIdentifier;
@@ -1461,10 +1464,9 @@ private:
   /// \brief Verify that it is legal for the source file that \p FilenameLoc
   /// points to to include the file \p Filename.
   ///
-  /// Tries to reuse \p IncFileEnt and \p SuggestedModule.
+  /// Tries to reuse \p IncFileEnt.
   void verifyModuleInclude(SourceLocation FilenameLoc, StringRef Filename,
-                           const FileEntry *IncFileEnt,
-                           ModuleMap::KnownHeader *SuggestedModule);
+                           const FileEntry *IncFileEnt);
 
   // Macro handling.
   void HandleDefineDirective(Token &Tok, bool ImmediatelyAfterTopLevelIfndef);

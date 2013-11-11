@@ -47,7 +47,7 @@ static std::string ReadPCHRecord(StringRef type) {
   return StringSwitch<std::string>(type)
     .EndsWith("Decl *", "GetLocalDeclAs<" 
               + std::string(type, 0, type.size()-1) + ">(F, Record[Idx++])")
-    .Case("QualType", "getLocalType(F, Record[Idx++])")
+    .Case("TypeSourceInfo *", "GetTypeSourceInfo(F, Record, Idx)")
     .Case("Expr *", "ReadExpr(F)")
     .Case("IdentifierInfo *", "GetIdentifierInfo(F, Record, Idx)")
     .Case("SourceLocation", "ReadSourceLocation(F, Record, Idx)")
@@ -59,7 +59,8 @@ static std::string WritePCHRecord(StringRef type, StringRef name) {
   return StringSwitch<std::string>(type)
     .EndsWith("Decl *", "AddDeclRef(" + std::string(name) +
                         ", Record);\n")
-    .Case("QualType", "AddTypeRef(" + std::string(name) + ", Record);\n")
+    .Case("TypeSourceInfo *",
+          "AddTypeSourceInfo(" + std::string(name) + ", Record);\n")
     .Case("Expr *", "AddStmt(" + std::string(name) + ");\n")
     .Case("IdentifierInfo *", 
           "AddIdentifierRef(" + std::string(name) + ", Record);\n")
@@ -136,6 +137,7 @@ namespace {
     virtual void writeHasChildren(raw_ostream &OS) const { OS << "false"; }
 
     virtual bool isEnumArg() const { return false; }
+    virtual bool isVariadicEnumArg() const { return false; }
   };
 
   class SimpleArgument : public Argument {
@@ -184,10 +186,11 @@ namespace {
     }
     void writeValue(raw_ostream &OS) const {
       if (type == "FunctionDecl *") {
-        OS << "\" << get" << getUpperName() << "()->getNameInfo().getAsString() << \"";
+        OS << "\" << get" << getUpperName()
+           << "()->getNameInfo().getAsString() << \"";
       } else if (type == "IdentifierInfo *") {
         OS << "\" << get" << getUpperName() << "()->getName() << \"";
-      } else if (type == "QualType") {
+      } else if (type == "TypeSourceInfo *") {
         OS << "\" << get" << getUpperName() << "().getAsString() << \"";
       } else if (type == "SourceLocation") {
         OS << "\" << get" << getUpperName() << "().getRawEncoding() << \"";
@@ -202,7 +205,7 @@ namespace {
       } else if (type == "IdentifierInfo *") {
         OS << "    OS << \" \" << SA->get" << getUpperName()
            << "()->getName();\n";
-      } else if (type == "QualType") {
+      } else if (type == "TypeSourceInfo *") {
         OS << "    OS << \" \" << SA->get" << getUpperName()
            << "().getAsString();\n";
       } else if (type == "SourceLocation") {
@@ -474,7 +477,7 @@ namespace {
          << ";\n";
       OS << "  " << getLowerName() << ".reserve(" << getLowerName()
          << "Size);\n";
-      OS << "  for (unsigned i = " << getLowerName() << "Size; i; --i)\n";
+      OS << "    for (unsigned i = " << getLowerName() << "Size; i; --i)\n";
       
       std::string read = ReadPCHRecord(type);
       OS << "    " << getLowerName() << ".push_back(" << read << ");\n";
@@ -588,6 +591,93 @@ namespace {
       OS << "    }\n";
     }
 
+    void writeConversion(raw_ostream &OS) const {
+      OS << "  static bool ConvertStrTo" << type << "(StringRef Val, ";
+      OS << type << " &Out) {\n";
+      OS << "    Optional<" << type << "> R = llvm::StringSwitch<Optional<";
+      OS << type << "> >(Val)\n";
+      for (size_t I = 0; I < enums.size(); ++I) {
+        OS << "      .Case(\"" << values[I] << "\", ";
+        OS << getAttrName() << "Attr::" << enums[I] << ")\n";
+      }
+      OS << "      .Default(Optional<" << type << ">());\n";
+      OS << "    if (R) {\n";
+      OS << "      Out = *R;\n      return true;\n    }\n";
+      OS << "    return false;\n";
+      OS << "  }\n";
+    }
+  };
+  
+  class VariadicEnumArgument: public VariadicArgument {
+    std::string type, QualifiedTypeName;
+    std::vector<StringRef> values, enums, uniques;
+  public:
+    VariadicEnumArgument(Record &Arg, StringRef Attr)
+      : VariadicArgument(Arg, Attr, Arg.getValueAsString("Type")),
+        type(Arg.getValueAsString("Type")),
+        values(getValueAsListOfStrings(Arg, "Values")),
+        enums(getValueAsListOfStrings(Arg, "Enums")),
+        uniques(enums)
+    {
+      // Calculate the various enum values
+      std::sort(uniques.begin(), uniques.end());
+      uniques.erase(std::unique(uniques.begin(), uniques.end()), uniques.end());
+      
+      QualifiedTypeName = getAttrName().str() + "Attr::" + type;
+      
+      // FIXME: Emit a proper error
+      assert(!uniques.empty());
+    }
+
+    bool isVariadicEnumArg() const { return true; }
+    
+    void writeDeclarations(raw_ostream &OS) const {
+      std::vector<StringRef>::const_iterator i = uniques.begin(),
+                                             e = uniques.end();
+      // The last one needs to not have a comma.
+      --e;
+
+      OS << "public:\n";
+      OS << "  enum " << type << " {\n";
+      for (; i != e; ++i)
+        OS << "    " << *i << ",\n";
+      OS << "    " << *e << "\n";
+      OS << "  };\n";
+      OS << "private:\n";
+      
+      VariadicArgument::writeDeclarations(OS);
+    }
+    void writeDump(raw_ostream &OS) const {
+      OS << "    for (" << getAttrName() << "Attr::" << getLowerName()
+         << "_iterator I = SA->" << getLowerName() << "_begin(), E = SA->"
+         << getLowerName() << "_end(); I != E; ++I) {\n";
+      OS << "      switch(*I) {\n";
+      for (std::vector<StringRef>::const_iterator UI = uniques.begin(),
+           UE = uniques.end(); UI != UE; ++UI) {
+        OS << "    case " << getAttrName() << "Attr::" << *UI << ":\n";
+        OS << "      OS << \" " << *UI << "\";\n";
+        OS << "      break;\n";
+      }
+      OS << "      }\n";
+      OS << "    }\n";
+    }
+    void writePCHReadDecls(raw_ostream &OS) const {
+      OS << "    unsigned " << getLowerName() << "Size = Record[Idx++];\n";
+      OS << "    SmallVector<" << QualifiedTypeName << ", 4> " << getLowerName()
+         << ";\n";
+      OS << "    " << getLowerName() << ".reserve(" << getLowerName()
+         << "Size);\n";
+      OS << "    for (unsigned i = " << getLowerName() << "Size; i; --i)\n";
+      OS << "      " << getLowerName() << ".push_back(" << "static_cast<"
+         << QualifiedTypeName << ">(Record[Idx++]));\n";
+    }
+    void writePCHWrite(raw_ostream &OS) const{
+      OS << "    Record.push_back(SA->" << getLowerName() << "_size());\n";
+      OS << "    for (" << getAttrName() << "Attr::" << getLowerName()
+         << "_iterator i = SA->" << getLowerName() << "_begin(), e = SA->"
+         << getLowerName() << "_end(); i != e; ++i)\n";
+      OS << "      " << WritePCHRecord(QualifiedTypeName, "(*i)");
+    }
     void writeConversion(raw_ostream &OS) const {
       OS << "  static bool ConvertStrTo" << type << "(StringRef Val, ";
       OS << type << " &Out) {\n";
@@ -739,6 +829,29 @@ namespace {
          << "SA->" << getLowerName() << "_end()";
     }
   };
+
+  class TypeArgument : public SimpleArgument {
+  public:
+    TypeArgument(Record &Arg, StringRef Attr)
+      : SimpleArgument(Arg, Attr, "TypeSourceInfo *")
+    {}
+
+    void writeAccessors(raw_ostream &OS) const {
+      OS << "  QualType get" << getUpperName() << "() const {\n";
+      OS << "    return " << getLowerName() << "->getType();\n";
+      OS << "  }";
+      OS << "  " << getType() << " get" << getUpperName() << "Loc() const {\n";
+      OS << "    return " << getLowerName() << ";\n";
+      OS << "  }";
+    }
+    void writeTemplateInstantiationArgs(raw_ostream &OS) const {
+      OS << "A->get" << getUpperName() << "Loc()";
+    }
+    void writePCHWrite(raw_ostream &OS) const {
+      OS << "    " << WritePCHRecord(
+          getType(), "SA->get" + std::string(getUpperName()) + "Loc()");
+    }
+  };
 }
 
 static Argument *createArgument(Record &Arg, StringRef Attr,
@@ -760,14 +873,15 @@ static Argument *createArgument(Record &Arg, StringRef Attr,
                                                                "bool");
   else if (ArgName == "IntArgument") Ptr = new SimpleArgument(Arg, Attr, "int");
   else if (ArgName == "StringArgument") Ptr = new StringArgument(Arg, Attr);
-  else if (ArgName == "TypeArgument")
-    Ptr = new SimpleArgument(Arg, Attr, "QualType");
+  else if (ArgName == "TypeArgument") Ptr = new TypeArgument(Arg, Attr);
   else if (ArgName == "UnsignedArgument")
     Ptr = new SimpleArgument(Arg, Attr, "unsigned");
   else if (ArgName == "SourceLocArgument")
     Ptr = new SimpleArgument(Arg, Attr, "SourceLocation");
   else if (ArgName == "VariadicUnsignedArgument")
     Ptr = new VariadicArgument(Arg, Attr, "unsigned");
+  else if (ArgName == "VariadicEnumArgument")
+    Ptr = new VariadicEnumArgument(Arg, Attr);
   else if (ArgName == "VariadicExprArgument")
     Ptr = new VariadicExprArgument(Arg, Attr);
   else if (ArgName == "VersionArgument")
@@ -1051,6 +1165,9 @@ void EmitClangAttrClass(RecordKeeper &Records, raw_ostream &OS) {
       if ((*ai)->isEnumArg()) {
         EnumArgument *EA = (EnumArgument *)*ai;
         EA->writeConversion(OS);
+      } else if ((*ai)->isVariadicEnumArg()) {
+        VariadicEnumArgument *VEA = (VariadicEnumArgument *)*ai;
+        VEA->writeConversion(OS);
       }
     }
 
@@ -1070,10 +1187,49 @@ void EmitClangAttrClass(RecordKeeper &Records, raw_ostream &OS) {
   OS << "#endif\n";
 }
 
-// Emits the all-arguments-are-expressions property for attributes.
-void EmitClangAttrExprArgsList(RecordKeeper &Records, raw_ostream &OS) {
+static bool isIdentifierArgument(Record *Arg) {
+  return !Arg->getSuperClasses().empty() &&
+         llvm::StringSwitch<bool>(Arg->getSuperClasses().back()->getName())
+             .Case("IdentifierArgument", true)
+             .Case("EnumArgument", true)
+             .Default(false);
+}
+
+/// \brief Emits the first-argument-is-type property for attributes.
+void EmitClangAttrTypeArgList(RecordKeeper &Records, raw_ostream &OS) {
+  emitSourceFileHeader("llvm::StringSwitch code to match attributes with a "
+                       "type argument", OS);
+
+  std::vector<Record *> Attrs = Records.getAllDerivedDefinitions("Attr");
+
+  for (std::vector<Record *>::iterator I = Attrs.begin(), E = Attrs.end();
+       I != E; ++I) {
+    Record &Attr = **I;
+
+    // Determine whether the first argument is a type.
+    std::vector<Record *> Args = Attr.getValueAsListOfDefs("Args");
+    if (Args.empty())
+      continue;
+
+    if (Args[0]->getSuperClasses().back()->getName() != "TypeArgument")
+      continue;
+
+    // All these spellings take a single type argument.
+    std::vector<Record*> Spellings = Attr.getValueAsListOfDefs("Spellings");
+    std::set<std::string> Emitted;
+    for (std::vector<Record*>::const_iterator I = Spellings.begin(),
+         E = Spellings.end(); I != E; ++I) {
+      if (Emitted.insert((*I)->getValueAsString("Name")).second)
+        OS << ".Case(\"" << (*I)->getValueAsString("Name") << "\", "
+           << "true" << ")\n";
+    }
+  }
+}
+
+// Emits the first-argument-is-identifier property for attributes.
+void EmitClangAttrIdentifierArgList(RecordKeeper &Records, raw_ostream &OS) {
   emitSourceFileHeader("llvm::StringSwitch code to match attributes with "
-                       "expression arguments", OS);
+                       "an identifier argument", OS);
 
   std::vector<Record*> Attrs = Records.getAllDerivedDefinitions("Attr");
 
@@ -1081,35 +1237,19 @@ void EmitClangAttrExprArgsList(RecordKeeper &Records, raw_ostream &OS) {
        I != E; ++I) {
     Record &Attr = **I;
 
-    // Determine whether the first argument is something that is always
-    // an expression.
+    // Determine whether the first argument is an identifier.
     std::vector<Record *> Args = Attr.getValueAsListOfDefs("Args");
-    if (Args.empty() || Args[0]->getSuperClasses().empty())
+    if (Args.empty() || !isIdentifierArgument(Args[0]))
       continue;
 
-    // Check whether this is one of the argument kinds that implies an
-    // expression.
-    // FIXME: Aligned is weird.
-    if (!llvm::StringSwitch<bool>(Args[0]->getSuperClasses().back()->getName())
-          .Case("AlignedArgument", true)
-          .Case("BoolArgument", true)
-          .Case("DefaultIntArgument", true)
-          .Case("FunctionArgument", true)
-          .Case("IntArgument", true)
-          .Case("ExprArgument", true)
-          .Case("StringArgument", true)
-          .Case("UnsignedArgument", true)
-          .Case("VariadicUnsignedArgument", true)
-          .Case("VariadicExprArgument", true)
-          .Default(false))
-      continue;
-
+    // All these spellings take an identifier argument.
     std::vector<Record*> Spellings = Attr.getValueAsListOfDefs("Spellings");
-
+    std::set<std::string> Emitted;
     for (std::vector<Record*>::const_iterator I = Spellings.begin(),
          E = Spellings.end(); I != E; ++I) {
-      OS << ".Case(\"" << (*I)->getValueAsString("Name") << "\", "
-         << "true" << ")\n";
+      if (Emitted.insert((*I)->getValueAsString("Name")).second)
+        OS << ".Case(\"" << (*I)->getValueAsString("Name") << "\", "
+           << "true" << ")\n";
     }
   }
 }

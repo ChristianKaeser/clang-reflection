@@ -174,7 +174,7 @@ static bool fillRanges(SourceManager &Sources, FileID ID,
 }
 
 // Returns true on error.
-static bool format(std::string FileName) {
+static bool format(StringRef FileName) {
   FileManager Files((FileSystemOptions()));
   DiagnosticsEngine Diagnostics(
       IntrusiveRefCntPtr<DiagnosticIDs>(new DiagnosticIDs),
@@ -186,7 +186,7 @@ static bool format(std::string FileName) {
     return true;
   }
   if (Code->getBufferSize() == 0)
-    return true; // Empty files are formatted correctly.
+    return false; // Empty files are formatted correctly.
   FileID ID = createInMemoryFile(FileName, Code.get(), Sources, Files);
   std::vector<CharSourceRange> Ranges;
   if (fillRanges(Sources, ID, Code.get(), Ranges))
@@ -213,18 +213,8 @@ static bool format(std::string FileName) {
     Rewriter Rewrite(Sources, LangOptions());
     tooling::applyAllReplacements(Replaces, Rewrite);
     if (Inplace) {
-      if (Replaces.size() == 0)
-        return false; // Nothing changed, don't touch the file.
-
-      std::string ErrorInfo;
-      llvm::raw_fd_ostream FileStream(FileName.c_str(), ErrorInfo,
-                                      llvm::sys::fs::F_Binary);
-      if (!ErrorInfo.empty()) {
-        llvm::errs() << "Error while writing file: " << ErrorInfo << "\n";
+      if (Rewrite.overwriteChangedFiles())
         return true;
-      }
-      Rewrite.getEditBuffer(ID).write(FileStream);
-      FileStream.flush();
     } else {
       if (Cursor.getNumOccurrences() != 0)
         outs() << "{ \"Cursor\": " << tooling::shiftedCodePosition(

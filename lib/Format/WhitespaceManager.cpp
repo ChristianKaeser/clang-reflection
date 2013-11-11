@@ -39,11 +39,18 @@ WhitespaceManager::Change::Change(
       ContinuesPPDirective(ContinuesPPDirective), IndentLevel(IndentLevel),
       Spaces(Spaces) {}
 
-void WhitespaceManager::replaceWhitespace(const FormatToken &Tok,
-                                          unsigned Newlines,
+void WhitespaceManager::reset() {
+  Changes.clear();
+  Replaces.clear();
+}
+
+void WhitespaceManager::replaceWhitespace(FormatToken &Tok, unsigned Newlines,
                                           unsigned IndentLevel, unsigned Spaces,
                                           unsigned StartOfTokenColumn,
                                           bool InPPDirective) {
+  if (Tok.Finalized)
+    return;
+  Tok.Decision = (Newlines > 0) ? FD_Break : FD_Continue;
   Changes.push_back(Change(true, Tok.WhitespaceRange, IndentLevel, Spaces,
                            StartOfTokenColumn, Newlines, "", "",
                            Tok.Tok.getKind(), InPPDirective && !Tok.IsFirst));
@@ -51,6 +58,8 @@ void WhitespaceManager::replaceWhitespace(const FormatToken &Tok,
 
 void WhitespaceManager::addUntouchableToken(const FormatToken &Tok,
                                             bool InPPDirective) {
+  if (Tok.Finalized)
+    return;
   Changes.push_back(Change(false, Tok.WhitespaceRange, /*IndentLevel=*/0,
                            /*Spaces=*/0, Tok.OriginalColumn, Tok.NewlinesBefore,
                            "", "", Tok.Tok.getKind(),
@@ -61,6 +70,8 @@ void WhitespaceManager::replaceWhitespaceInToken(
     const FormatToken &Tok, unsigned Offset, unsigned ReplaceChars,
     StringRef PreviousPostfix, StringRef CurrentPrefix, bool InPPDirective,
     unsigned Newlines, unsigned IndentLevel, unsigned Spaces) {
+  if (Tok.Finalized)
+    return;
   Changes.push_back(Change(
       true, SourceRange(Tok.getStartOfNonWhitespace().getLocWithOffset(Offset),
                         Tok.getStartOfNonWhitespace().getLocWithOffset(
@@ -130,19 +141,21 @@ void WhitespaceManager::alignTrailingComments() {
       bool FollowsRBraceInColumn0 = i > 0 && Changes[i].NewlinesBefore == 0 &&
                                     Changes[i - 1].Kind == tok::r_brace &&
                                     Changes[i - 1].StartOfTokenColumn == 0;
-      bool WasAlignedWithStartOfNextLine =
-          // A comment on its own line.
-          Changes[i].NewlinesBefore == 1 &&
-          // Not the last line.
-          i + 1 != e &&
-          // The start of the next token was previously aligned with
-          // the start of this comment.
-          (SourceMgr.getSpellingColumnNumber(
-               Changes[i].OriginalWhitespaceRange.getEnd()) ==
-           SourceMgr.getSpellingColumnNumber(
-               Changes[i + 1].OriginalWhitespaceRange.getEnd())) &&
-          // Which is not a comment itself.
-          Changes[i + 1].Kind != tok::comment;
+      bool WasAlignedWithStartOfNextLine = false;
+      if (Changes[i].NewlinesBefore == 1) { // A comment on its own line.
+        for (unsigned j = i + 1; j != e; ++j) {
+          if (Changes[j].Kind != tok::comment) { // Skip over comments.
+            // The start of the next token was previously aligned with the
+            // start of this comment.
+            WasAlignedWithStartOfNextLine =
+                (SourceMgr.getSpellingColumnNumber(
+                     Changes[i].OriginalWhitespaceRange.getEnd()) ==
+                 SourceMgr.getSpellingColumnNumber(
+                     Changes[j].OriginalWhitespaceRange.getEnd()));
+            break;
+          }
+        }
+      }
       if (!Style.AlignTrailingComments || FollowsRBraceInColumn0) {
         alignTrailingComments(StartOfSequence, i, MinColumn);
         MinColumn = ChangeMinColumn;

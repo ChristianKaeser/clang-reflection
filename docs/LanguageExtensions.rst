@@ -1176,8 +1176,52 @@ of this feature in version of clang being used.
 
 .. _langext-objc_method_family:
 
-The ``objc_method_family`` attribute
-------------------------------------
+
+Objective-C requiring a call to ``super`` in an override
+--------------------------------------------------------
+
+Some Objective-C classes allow a subclass to override a particular method in a
+parent class but expect that the overriding method also calls the overridden
+method in the parent class. For these cases, we provide an attribute to
+designate that a method requires a "call to ``super``" in the overriding
+method in the subclass.
+
+**Usage**: ``__attribute__((objc_requires_super))``.  This attribute can only
+be placed at the end of a method declaration:
+
+.. code-block:: objc
+
+  - (void)foo __attribute__((objc_requires_super));
+
+This attribute can only be applied the method declarations within a class, and
+not a protocol.  Currently this attribute does not enforce any placement of
+where the call occurs in the overriding method (such as in the case of
+``-dealloc`` where the call must appear at the end).  It checks only that it
+exists.
+
+Note that on both OS X and iOS that the Foundation framework provides a
+convenience macro ``NS_REQUIRES_SUPER`` that provides syntactic sugar for this
+attribute:
+
+.. code-block:: objc
+
+  - (void)foo NS_REQUIRES_SUPER;
+
+This macro is conditionally defined depending on the compiler's support for
+this attribute.  If the compiler does not support the attribute the macro
+expands to nothing.
+
+Operationally, when a method has this annotation the compiler will warn if the
+implementation of an override in a subclass does not call super.  For example:
+
+.. code-block:: objc
+
+   warning: method possibly missing a [super AnnotMeth] call
+   - (void) AnnotMeth{};
+                      ^
+
+Objective-C Method Families
+---------------------------
 
 Many methods in Objective-C have conventional meanings determined by their
 selectors. It is sometimes useful to be able to mark a method as having a
@@ -1255,6 +1299,21 @@ Further examples of these attributes are available in the static analyzer's `lis
 Query for these features with ``__has_attribute(ns_consumed)``,
 ``__has_attribute(ns_returns_retained)``, etc.
 
+
+Objective-C++ ABI: protocol-qualifier mangling of parameters
+------------------------------------------------------------
+
+Starting with LLVM 3.4, Clang produces a new mangling for parameters whose
+type is a qualified-``id`` (e.g., ``id<Foo>``).  This mangling allows such
+parameters to be differentiated from those with the regular unqualified ``id``
+type.
+
+This was a non-backward compatible mangling change to the ABI.  This change
+allows proper overloading, and also prevents mangling conflicts with template
+parameters of protocol-qualified type.
+
+Query the presence of this new mangling with
+``__has_feature(objc_protocol_qualifier_mangling)``.
 
 Function Overloading in C
 =========================
@@ -1843,6 +1902,48 @@ Which compiles to (on X86-32):
           movl    %gs:(%eax), %eax
           ret
 
+ARM Language Extensions
+-----------------------
+
+Interrupt attribute
+^^^^^^^^^^^^^^^^^^^
+
+Clang supports the GNU style ``__attribite__((interrupt("TYPE")))`` attribute on
+ARM targets. This attribute may be attached to a function definiton and
+instructs the backend to generate appropriate function entry/exit code so that
+it can be used directly as an interrupt service routine.
+
+ The parameter passed to the interrupt attribute is optional, but if
+provided it must be a string literal with one of the following values: "IRQ",
+"FIQ", "SWI", "ABORT", "UNDEF".
+
+The semantics are as follows:
+
+- If the function is AAPCS, Clang instructs the backend to realign the stack to
+  8 bytes on entry. This is a general requirement of the AAPCS at public
+  interfaces, but may not hold when an exception is taken. Doing this allows
+  other AAPCS functions to be called.
+- If the CPU is M-class this is all that needs to be done since the architecture
+  itself is designed in such a way that functions obeying the normal AAPCS ABI
+  constraints are valid exception handlers.
+- If the CPU is not M-class, the prologue and epilogue are modified to save all
+  non-banked registers that are used, so that upon return the user-mode state
+  will not be corrupted. Note that to avoid unnecessary overhead, only
+  general-purpose (integer) registers are saved in this way. If VFP operations
+  are needed, that state must be saved manually.
+
+  Specifically, interrupt kinds other than "FIQ" will save all core registers
+  except "lr" and "sp". "FIQ" interrupts will save r0-r7.
+- If the CPU is not M-class, the return instruction is changed to one of the
+  canonical sequences permitted by the architecture for exception return. Where
+  possible the function itself will make the necessary "lr" adjustments so that
+  the "preferred return address" is selected.
+
+  Unfortunately the compiler is unable to make this guarantee for an "UNDEF"
+  handler, where the offset from "lr" to the preferred return address depends on
+  the execution state of the code which generated the exception. In this case
+  a sequence equivalent to "movs pc, lr" will be used.
+
 Extensions for Static Analysis
 ==============================
 
@@ -1880,8 +1981,8 @@ with :doc:`ThreadSanitizer`.
 Use ``__attribute__((no_sanitize_thread))`` on a function declaration
 to specify that checks for data races on plain (non-atomic) memory accesses
 should not be inserted by ThreadSanitizer.
-The function may still be instrumented by the tool
-to avoid false positives in other places.
+The function is still instrumented by the tool to avoid false positives and
+provide meaningful stack traces.
 
 .. _langext-memory_sanitizer:
 
@@ -2058,24 +2159,54 @@ properties, specifically for unique objects that have a single owning reference.
 The following attributes are currently supported, although **the implementation
 for these annotations is currently in development and are subject to change.**
 
-``consumes``
-------------
+``consumable``
+--------------
 
-Use ``__attribute__((consumes))`` on a method that transitions an object into
-the consumed state.
+Each class that uses any of the following annotations must first be marked
+using the consumable attribute.  Failure to do so will result in a warning.
 
-``callable_when_unconsumed``
+``set_typestate(new_state)``
 ----------------------------
 
-Use ``__attribute__((callable_when_unconsumed))`` to indicate that a method may
-only be called when the object is not in the consumed state.
+Annotate methods that transition an object into a new state with
+``__attribute__((set_typestate(new_state)))``.  The new new state must be
+unconsumed, consumed, or unknown.
 
-``tests_unconsumed``
---------------------
+``callable_when(...)``
+----------------------
 
-Use `__attribute__((tests_unconsumed))`` to indicate that a method returns true
-if the object is in the unconsumed state.
+Use ``__attribute__((callable_when(...)))`` to indicate what states a method
+may be called in.  Valid states are unconsumed, consumed, or unknown.  Each
+argument to this attribute must be a quoted string.  E.g.:
 
+``__attribute__((callable_when("unconsumed", "unknown")))``
+
+``tests_typestate(tested_state)``
+---------------------------------
+
+Use ``__attribute__((tests_typestate(tested_state)))`` to indicate that a method
+returns true if the object is in the specified state..
+
+``param_typestate(expected_state)``
+-----------------------------------
+
+This attribute specifies expectations about function parameters.  Calls to an
+function with annotated parameters will issue a warning if the corresponding
+argument isn't in the expected state.  The attribute is also used to set the
+initial state of the parameter when analyzing the function's body.
+
+``return_typestate(ret_state)``
+-------------------------------
+
+The ``return_typestate`` attribute can be applied to functions or parameters.
+When applied to a function the attribute specifies the state of the returned
+value.  The function's body is checked to ensure that it always returns a value
+in the specified state.  On the caller side, values returned by the annotated
+function are initialized to the given state.
+
+If the attribute is applied to a function parameter it modifies the state of
+an argument after a call to the function returns.  The function's body is
+checked to ensure that the parameter is in the expected state before returning. 
 
 Type Safety Checking
 ====================

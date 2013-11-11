@@ -2111,6 +2111,16 @@ public:
     return (FunctionDefinitionKind)FunctionDefinition; 
   }
 
+  /// Returns true if this declares a real member and not a friend.
+  bool isFirstDeclarationOfMember() {
+    return getContext() == MemberContext && !getDeclSpec().isFriendSpecified();
+  }
+
+  /// Returns true if this declares a static member.  This cannot be called on a
+  /// declarator outside of a MemberContext because we won't know until
+  /// redeclaration time if the decl is static.
+  bool isStaticMember();
+
   void setRedeclaration(bool Val) { Redeclaration = Val; }
   bool isRedeclaration() const { return Redeclaration; }
 };
@@ -2130,7 +2140,8 @@ public:
   enum Specifier {
     VS_None = 0,
     VS_Override = 1,
-    VS_Final = 2
+    VS_Final = 2,
+    VS_Sealed = 4
   };
 
   VirtSpecifiers() : Specifiers(0) { }
@@ -2141,7 +2152,8 @@ public:
   bool isOverrideSpecified() const { return Specifiers & VS_Override; }
   SourceLocation getOverrideLoc() const { return VS_overrideLoc; }
 
-  bool isFinalSpecified() const { return Specifiers & VS_Final; }
+  bool isFinalSpecified() const { return Specifiers & (VS_Final | VS_Sealed); }
+  bool isFinalSpelledSealed() const { return Specifiers & VS_Sealed; }
   SourceLocation getFinalLoc() const { return VS_finalLoc; }
 
   void clear() { Specifiers = 0; }

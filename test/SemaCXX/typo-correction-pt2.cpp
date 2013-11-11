@@ -144,3 +144,40 @@ namespace PR17394 {
   class B : private A {};
   B zzzzzzzzzy<>; // expected-error {{expected ';' after top level declarator}}{}
 }
+
+namespace correct_fields_in_member_funcs {
+struct S {
+  int my_member;  // expected-note {{'my_member' declared here}}
+  void f() { my_menber = 1; }  // expected-error {{use of undeclared identifier 'my_menber'; did you mean 'my_member'?}}
+};
+}
+
+namespace PR17019 {
+  template<class F>
+  struct evil {
+    evil(F de) {  // expected-note {{'de' declared here}}
+      de_;  // expected-error {{use of undeclared identifier 'de_'; did you mean 'de'?}} \
+            // expected-warning {{expression result unused}}
+    }
+    ~evil() {
+      de_->bar()  // expected-error {{use of undeclared identifier 'de_'}}
+    }
+  };
+
+  void meow() {
+    evil<int> Q(0); // expected-note {{in instantiation of member function}}
+  }
+}
+
+namespace fix_class_name_qualifier {
+class MessageHeaders {};
+class MessageUtils {
+ public:
+  static void ParseMessageHeaders(int, int); // expected-note {{'MessageUtils::ParseMessageHeaders' declared here}}
+};
+
+void test() {
+  // No, we didn't mean to call MessageHeaders::MessageHeaders.
+  MessageHeaders::ParseMessageHeaders(5, 4); // expected-error {{no member named 'ParseMessageHeaders' in 'fix_class_name_qualifier::MessageHeaders'; did you mean 'MessageUtils::ParseMessageHeaders'?}}
+}
+}

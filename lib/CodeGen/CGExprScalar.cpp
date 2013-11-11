@@ -87,15 +87,16 @@ public:
 
   void EmitBinOpCheck(Value *Check, const BinOpInfo &Info);
 
-  Value *EmitLoadOfLValue(LValue LV) {
-    return CGF.EmitLoadOfLValue(LV).getScalarVal();
+  Value *EmitLoadOfLValue(LValue LV, SourceLocation Loc) {
+    return CGF.EmitLoadOfLValue(LV, Loc).getScalarVal();
   }
 
   /// EmitLoadOfLValue - Given an expression with complex type that represents a
   /// value l-value, this method emits the address of the l-value, then loads
   /// and returns the result.
   Value *EmitLoadOfLValue(const Expr *E) {
-    return EmitLoadOfLValue(EmitCheckedLValue(E, CodeGenFunction::TCK_Load));
+    return EmitLoadOfLValue(EmitCheckedLValue(E, CodeGenFunction::TCK_Load),
+                            E->getExprLoc());
   }
 
   /// EmitConversionToBool - Convert the specified expression value to a
@@ -217,7 +218,7 @@ public:
 
   Value *VisitOpaqueValueExpr(OpaqueValueExpr *E) {
     if (E->isGLValue())
-      return EmitLoadOfLValue(CGF.getOpaqueLValueMapping(E));
+      return EmitLoadOfLValue(CGF.getOpaqueLValueMapping(E), E->getExprLoc());
 
     // Otherwise, assume the mapping is the scalar directly.
     return CGF.getOpaqueRValueMapping(E).getScalarVal();
@@ -227,7 +228,8 @@ public:
   Value *VisitDeclRefExpr(DeclRefExpr *E) {
     if (CodeGenFunction::ConstantEmission result = CGF.tryEmitAsConstant(E)) {
       if (result.isReference())
-        return EmitLoadOfLValue(result.getReferenceLValue(CGF, E));
+        return EmitLoadOfLValue(result.getReferenceLValue(CGF, E),
+                                E->getExprLoc());
       return result.getValue();
     }
     return EmitLoadOfLValue(E);
@@ -251,7 +253,7 @@ public:
 
   Value *VisitObjCIsaExpr(ObjCIsaExpr *E) {
     LValue LV = CGF.EmitObjCIsaExpr(E);
-    Value *V = CGF.EmitLoadOfLValue(LV).getScalarVal();
+    Value *V = CGF.EmitLoadOfLValue(LV, E->getExprLoc()).getScalarVal();
     return V;
   }
 
@@ -1076,7 +1078,7 @@ Value *ScalarExprEmitter::VisitArraySubscriptExpr(ArraySubscriptExpr *E) {
   Value *Idx  = Visit(E->getIdx());
   QualType IdxTy = E->getIdx()->getType();
 
-  if (CGF.SanOpts->Bounds)
+  if (CGF.SanOpts->ArrayBounds)
     CGF.EmitBoundsCheck(E, E->getBase(), Idx, IdxTy, /*Accessed*/true);
 
   bool IdxSigned = IdxTy->isSignedIntegerOrEnumerationType();
@@ -1293,7 +1295,8 @@ Value *ScalarExprEmitter::VisitCastExpr(CastExpr *CE) {
     Value *V = EmitLValue(E).getAddress();
     V = Builder.CreateBitCast(V,
                           ConvertType(CGF.getContext().getPointerType(DestTy)));
-    return EmitLoadOfLValue(CGF.MakeNaturalAlignAddrLValue(V, DestTy));
+    return EmitLoadOfLValue(CGF.MakeNaturalAlignAddrLValue(V, DestTy),
+                            CE->getExprLoc());
   }
 
   case CK_CPointerToObjCPointerCast:
@@ -1502,8 +1505,8 @@ Value *ScalarExprEmitter::VisitStmtExpr(const StmtExpr *E) {
                                                 !E->getType()->isVoidType());
   if (!RetAlloca)
     return 0;
-  return CGF.EmitLoadOfScalar(CGF.MakeAddrLValue(RetAlloca, E->getType()));
-
+  return CGF.EmitLoadOfScalar(CGF.MakeAddrLValue(RetAlloca, E->getType()),
+                              E->getExprLoc());
 }
 
 //===----------------------------------------------------------------------===//
@@ -1579,7 +1582,7 @@ ScalarExprEmitter::EmitScalarPrePostIncDec(const UnaryOperator *E, LValue LV,
           LV.getAddress(), amt, llvm::SequentiallyConsistent);
       return isPre ? Builder.CreateBinOp(op, old, amt) : old;
     }
-    value = EmitLoadOfLValue(LV);
+    value = EmitLoadOfLValue(LV, E->getExprLoc());
     input = value;
     // For every other atomic operation, we need to emit a load-op-cmpxchg loop
     llvm::BasicBlock *startBB = Builder.GetInsertBlock();
@@ -1591,7 +1594,7 @@ ScalarExprEmitter::EmitScalarPrePostIncDec(const UnaryOperator *E, LValue LV,
     atomicPHI->addIncoming(value, startBB);
     value = atomicPHI;
   } else {
-    value = EmitLoadOfLValue(LV);
+    value = EmitLoadOfLValue(LV, E->getExprLoc());
     input = value;
   }
 
@@ -1933,7 +1936,8 @@ Value *ScalarExprEmitter::VisitUnaryReal(const UnaryOperator *E) {
     // Note that we have to ask E because Op might be an l-value that
     // this won't work for, e.g. an Obj-C property.
     if (E->isGLValue())
-      return CGF.EmitLoadOfLValue(CGF.EmitLValue(E)).getScalarVal();
+      return CGF.EmitLoadOfLValue(CGF.EmitLValue(E),
+                                  E->getExprLoc()).getScalarVal();
 
     // Otherwise, calculate and project.
     return CGF.EmitComplexExpr(Op, false, true).first;
@@ -1949,7 +1953,8 @@ Value *ScalarExprEmitter::VisitUnaryImag(const UnaryOperator *E) {
     // Note that we have to ask E because Op might be an l-value that
     // this won't work for, e.g. an Obj-C property.
     if (Op->isGLValue())
-      return CGF.EmitLoadOfLValue(CGF.EmitLValue(E)).getScalarVal();
+      return CGF.EmitLoadOfLValue(CGF.EmitLValue(E),
+                                  E->getExprLoc()).getScalarVal();
 
     // Otherwise, calculate and project.
     return CGF.EmitComplexExpr(Op, true, false).second;
@@ -2046,7 +2051,7 @@ LValue ScalarExprEmitter::EmitCompoundAssignLValue(
     // floating point environment in the loop.
     llvm::BasicBlock *startBB = Builder.GetInsertBlock();
     llvm::BasicBlock *opBB = CGF.createBasicBlock("atomic_op", CGF.CurFn);
-    OpInfo.LHS = EmitLoadOfLValue(LHSLV);
+    OpInfo.LHS = EmitLoadOfLValue(LHSLV, E->getExprLoc());
     OpInfo.LHS = CGF.EmitToMemory(OpInfo.LHS, type);
     Builder.CreateBr(opBB);
     Builder.SetInsertPoint(opBB);
@@ -2055,7 +2060,7 @@ LValue ScalarExprEmitter::EmitCompoundAssignLValue(
     OpInfo.LHS = atomicPHI;
   }
   else
-    OpInfo.LHS = EmitLoadOfLValue(LHSLV);
+    OpInfo.LHS = EmitLoadOfLValue(LHSLV, E->getExprLoc());
 
   OpInfo.LHS = EmitScalarConversion(OpInfo.LHS, LHSTy,
                                     E->getComputationLHSType());
@@ -2109,7 +2114,7 @@ Value *ScalarExprEmitter::EmitCompoundAssign(const CompoundAssignOperator *E,
     return RHS;
 
   // Otherwise, reload the value.
-  return EmitLoadOfLValue(LHS);
+  return EmitLoadOfLValue(LHS, E->getExprLoc());
 }
 
 void ScalarExprEmitter::EmitUndefinedBehaviorIntegerDivAndRemCheck(
@@ -2314,7 +2319,7 @@ static Value *emitPointerArithmetic(CodeGenFunction &CGF,
   if (isSubtraction)
     index = CGF.Builder.CreateNeg(index, "idx.neg");
 
-  if (CGF.SanOpts->Bounds)
+  if (CGF.SanOpts->ArrayBounds)
     CGF.EmitBoundsCheck(op.E, pointerOperand, index, indexOperand->getType(),
                         /*Accessed*/ false);
 
@@ -2862,7 +2867,7 @@ Value *ScalarExprEmitter::VisitBinAssign(const BinaryOperator *E) {
     return RHS;
 
   // Otherwise, reload the value.
-  return EmitLoadOfLValue(LHS);
+  return EmitLoadOfLValue(LHS, E->getExprLoc());
 }
 
 Value *ScalarExprEmitter::VisitBinLAnd(const BinaryOperator *E) {
@@ -3023,22 +3028,15 @@ Value *ScalarExprEmitter::VisitBinComma(const BinaryOperator *E) {
 /// flow into selects in some cases.
 static bool isCheapEnoughToEvaluateUnconditionally(const Expr *E,
                                                    CodeGenFunction &CGF) {
-  E = E->IgnoreParens();
-
   // Anything that is an integer or floating point constant is fine.
-  if (E->isEvaluatable(CGF.getContext()))
-    return true;
+  return E->IgnoreParens()->isEvaluatable(CGF.getContext());
 
-  // Non-volatile automatic variables too, to get "cond ? X : Y" where
-  // X and Y are local variables.
-  if (const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(E))
-    if (const VarDecl *VD = dyn_cast<VarDecl>(DRE->getDecl()))
-      if (VD->hasLocalStorage() && !(CGF.getContext()
-                                     .getCanonicalType(VD->getType())
-                                     .isVolatileQualified()))
-        return true;
-
-  return false;
+  // Even non-volatile automatic variables can't be evaluated unconditionally.
+  // Referencing a thread_local may cause non-trivial initialization work to
+  // occur. If we're inside a lambda and one of the variables is from the scope
+  // outside the lambda, that function may have returned already. Reading its
+  // locals is a bad idea. Also, these reads may introduce races there didn't
+  // exist in the source-level program.
 }
 
 
@@ -3301,7 +3299,7 @@ LValue CodeGenFunction::EmitObjCIsaExpr(const ObjCIsaExpr *E) {
     llvm::Value *Src = EmitScalarExpr(BaseExpr);
     Builder.CreateStore(Src, V);
     V = ScalarExprEmitter(*this).EmitLoadOfLValue(
-      MakeNaturalAlignAddrLValue(V, E->getType()));
+      MakeNaturalAlignAddrLValue(V, E->getType()), E->getExprLoc());
   } else {
     if (E->isArrow())
       V = ScalarExprEmitter(*this).EmitLoadOfLValue(BaseExpr);

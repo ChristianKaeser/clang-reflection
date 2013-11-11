@@ -25,23 +25,25 @@ namespace clang {
 namespace format {
 
 enum TokenType {
+  TT_ArrayInitializerLSquare,
+  TT_ArraySubscriptLSquare,
   TT_BinaryOperator,
+  TT_BitFieldColon,
   TT_BlockComment,
   TT_CastRParen,
   TT_ConditionalExpr,
   TT_CtorInitializerColon,
   TT_CtorInitializerComma,
   TT_DesignatedInitializerPeriod,
+  TT_DictLiteral,
   TT_ImplicitStringLiteral,
   TT_InlineASMColon,
   TT_InheritanceColon,
   TT_FunctionTypeLParen,
   TT_LambdaLSquare,
   TT_LineComment,
-  TT_ObjCArrayLiteral,
   TT_ObjCBlockLParen,
   TT_ObjCDecl,
-  TT_ObjCDictLiteral,
   TT_ObjCForIn,
   TT_ObjCMethodExpr,
   TT_ObjCMethodSpecifier,
@@ -75,6 +77,12 @@ enum ParameterPackingKind {
   PPK_Inconclusive
 };
 
+enum FormatDecision {
+  FD_Unformatted,
+  FD_Continue,
+  FD_Break
+};
+
 class TokenRole;
 class AnnotatedLine;
 
@@ -92,7 +100,8 @@ struct FormatToken {
         LongestObjCSelectorName(0), FakeRParens(0),
         StartsBinaryExpression(false), EndsBinaryExpression(false),
         LastInChainOfCalls(false), PartOfMultiVariableDeclStmt(false),
-        MatchingParen(NULL), Previous(NULL), Next(NULL) {}
+        MatchingParen(NULL), Previous(NULL), Next(NULL),
+        Decision(FD_Unformatted), Finalized(false) {}
 
   /// \brief The \c Token.
   Token Tok;
@@ -330,12 +339,34 @@ struct FormatToken {
     return Tok;
   }
 
+  /// \brief Returns \c true if this tokens starts a block-type list, i.e. a
+  /// list that should be indented with a block indent.
+  bool opensBlockTypeList(const FormatStyle &Style) const {
+    return Type == TT_ArrayInitializerLSquare ||
+           (is(tok::l_brace) &&
+            (BlockKind == BK_Block || Type == TT_DictLiteral ||
+             !Style.Cpp11BracedListStyle));
+  }
+
+  /// \brief Same as opensBlockTypeList, but for the closing token.
+  bool closesBlockTypeList(const FormatStyle &Style) const {
+    return MatchingParen && MatchingParen->opensBlockTypeList(Style);
+  }
+
   FormatToken *MatchingParen;
 
   FormatToken *Previous;
   FormatToken *Next;
 
   SmallVector<AnnotatedLine *, 1> Children;
+
+  /// \brief Stores the formatting decision for the token once it was made.
+  FormatDecision Decision;
+
+  /// \brief If \c true, this token has been fully formatted (indented and
+  /// potentially re-formatted inside), and we do not allow further formatting
+  /// changes.
+  bool Finalized;
 
 private:
   // Disallow copying.

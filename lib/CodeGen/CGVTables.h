@@ -31,10 +31,10 @@ namespace CodeGen {
 class CodeGenVTables {
   CodeGenModule &CGM;
 
-  // FIXME: Consider moving VTContext and VFTContext into respective CXXABI
-  // classes?
-  VTableContext VTContext;
-  OwningPtr<MicrosoftVFTableContext> VFTContext;
+  // FIXME: Consider moving ItaniumVTContext and MicrosoftVTContext into
+  // respective CXXABI classes?
+  ItaniumVTableContext ItaniumVTContext;
+  OwningPtr<MicrosoftVTableContext> MicrosoftVTContext;
   
   /// VTableAddressPointsMapTy - Address points for a single vtable.
   typedef llvm::DenseMap<BaseSubobject, uint64_t> VTableAddressPointsMapTy;
@@ -52,15 +52,12 @@ class CodeGenVTables {
   /// indices.
   SecondaryVirtualPointerIndicesMapTy SecondaryVirtualPointerIndices;
 
-  /// EmitThunk - Emit a single thunk.
-  void EmitThunk(GlobalDecl GD, const ThunkInfo &Thunk, 
-                 bool UseAvailableExternallyLinkage);
+  /// emitThunk - Emit a single thunk.
+  void emitThunk(GlobalDecl GD, const ThunkInfo &Thunk, bool ForVTable);
 
-  /// MaybeEmitThunkAvailableExternally - Try to emit the given thunk with
-  /// available_externally linkage to allow for inlining of thunks.
-  /// This will be done iff optimizations are enabled and the member function
-  /// doesn't contain any incomplete types.
-  void MaybeEmitThunkAvailableExternally(GlobalDecl GD, const ThunkInfo &Thunk);
+  /// maybeEmitThunkForVTable - Emit the given thunk for the vtable if needed by
+  /// the ABI.
+  void maybeEmitThunkForVTable(GlobalDecl GD, const ThunkInfo &Thunk);
 
 public:
   /// CreateVTableInitializer - Create a vtable initializer for the given record
@@ -75,9 +72,11 @@ public:
 
   CodeGenVTables(CodeGenModule &CGM);
 
-  VTableContext &getVTableContext() { return VTContext; }
+  ItaniumVTableContext &getItaniumVTableContext() { return ItaniumVTContext; }
 
-  MicrosoftVFTableContext &getVFTableContext() { return *VFTContext.get(); }
+  MicrosoftVTableContext &getMicrosoftVTableContext() {
+    return *MicrosoftVTContext.get();
+  }
 
   /// getSubVTTIndex - Return the index of the sub-VTT for the base class of the
   /// given record decl.

@@ -453,13 +453,11 @@ Decl *Parser::ParseUsingDeclaration(unsigned Context,
   CXXScopeSpec SS;
   SourceLocation TypenameLoc;
   bool HasTypenameKeyword = false;
-  ParsedAttributesWithRange Attrs(AttrFactory);
 
-  // FIXME: Simply skip the attributes and diagnose, don't bother parsing them.
-  MaybeParseCXX11Attributes(Attrs);
-  ProhibitAttributes(Attrs);
-  Attrs.clear();
-  Attrs.Range = SourceRange();
+  // Check for misplaced attributes before the identifier in an
+  // alias-declaration.
+  ParsedAttributesWithRange MisplacedAttrs(AttrFactory);
+  MaybeParseCXX11Attributes(MisplacedAttrs);
 
   // Ignore optional 'typename'.
   // FIXME: This is wrong; we should parse this as a typename-specifier.
@@ -509,13 +507,25 @@ Decl *Parser::ParseUsingDeclaration(unsigned Context,
     return 0;
   }
 
+  ParsedAttributesWithRange Attrs(AttrFactory);
+  MaybeParseGNUAttributes(Attrs);
   MaybeParseCXX11Attributes(Attrs);
 
   // Maybe this is an alias-declaration.
-  bool IsAliasDecl = Tok.is(tok::equal);
   TypeResult TypeAlias;
+  bool IsAliasDecl = Tok.is(tok::equal);
   if (IsAliasDecl) {
-    // TODO: Can GNU attributes appear here?
+    // If we had any misplaced attributes from earlier, this is where they
+    // should have been written.
+    if (MisplacedAttrs.Range.isValid()) {
+      Diag(MisplacedAttrs.Range.getBegin(), diag::err_attributes_not_allowed)
+        << FixItHint::CreateInsertionFromRange(
+               Tok.getLocation(),
+               CharSourceRange::getTokenRange(MisplacedAttrs.Range))
+        << FixItHint::CreateRemoval(MisplacedAttrs.Range);
+      Attrs.takeAllFrom(MisplacedAttrs);
+    }
+
     ConsumeToken();
 
     Diag(Tok.getLocation(), getLangOpts().CPlusPlus11 ?
@@ -565,6 +575,7 @@ Decl *Parser::ParseUsingDeclaration(unsigned Context,
   } else {
     // C++11 attributes are not allowed on a using-declaration, but GNU ones
     // are.
+    ProhibitAttributes(MisplacedAttrs);
     ProhibitAttributes(Attrs);
 
     // Parse (optional) attributes (most likely GNU strong-using extension).
@@ -1201,8 +1212,7 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
 
   ParsedAttributesWithRange attrs(AttrFactory);
   // If attributes exist after tag, parse them.
-  if (Tok.is(tok::kw___attribute))
-    ParseGNUAttributes(attrs);
+  MaybeParseGNUAttributes(attrs);
 
   // If declspecs exist after tag, parse them.
   while (Tok.is(tok::kw___declspec))
@@ -1212,7 +1222,7 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
   if (Tok.is(tok::kw___single_inheritance) ||
       Tok.is(tok::kw___multiple_inheritance) ||
       Tok.is(tok::kw___virtual_inheritance))
-      ParseMicrosoftInheritanceClassAttributes(attrs);
+    ParseMicrosoftInheritanceClassAttributes(attrs);
 
   // If C++0x attributes exist here, parse them.
   // FIXME: Are we consistent with the ordering of parsing of different
@@ -1292,7 +1302,7 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
         << (TemplateInfo.Kind == ParsedTemplateInfo::ExplicitInstantiation)
         << (TagType == DeclSpec::TST_class? 0
             : TagType == DeclSpec::TST_struct? 1
-            : TagType == DeclSpec::TST_interface? 2
+            : TagType == DeclSpec::TST_union? 2
             : 3)
         << Name
         << SourceRange(LAngleLoc, RAngleLoc);
@@ -1535,35 +1545,31 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
         // but it actually has a definition. Most likely, this was
         // meant to be an explicit specialization, but the user forgot
         // the '<>' after 'template'.
-	// It this is friend declaration however, since it cannot have a
-	// template header, it is most likely that the user meant to
-	// remove the 'template' keyword.
+        // It this is friend declaration however, since it cannot have a
+        // template header, it is most likely that the user meant to
+        // remove the 'template' keyword.
         assert((TUK == Sema::TUK_Definition || TUK == Sema::TUK_Friend) &&
-	       "Expected a definition here");
+               "Expected a definition here");
 
-	if (TUK == Sema::TUK_Friend) {
-	  Diag(DS.getFriendSpecLoc(), 
-	       diag::err_friend_explicit_instantiation);
-	  TemplateParams = 0;
-	} else {
-	  SourceLocation LAngleLoc
-	    = PP.getLocForEndOfToken(TemplateInfo.TemplateLoc);
-	  Diag(TemplateId->TemplateNameLoc,
-	       diag::err_explicit_instantiation_with_definition)
-	    << SourceRange(TemplateInfo.TemplateLoc)
-	    << FixItHint::CreateInsertion(LAngleLoc, "<>");
-	  
-	  // Create a fake template parameter list that contains only
-	  // "template<>", so that we treat this construct as a class
-	  // template specialization.
-	  FakedParamLists.push_back(
-	    Actions.ActOnTemplateParameterList(0, SourceLocation(),
-					       TemplateInfo.TemplateLoc,
-					       LAngleLoc,
-					       0, 0,
-					       LAngleLoc));
-	  TemplateParams = &FakedParamLists;
-	}
+        if (TUK == Sema::TUK_Friend) {
+          Diag(DS.getFriendSpecLoc(), diag::err_friend_explicit_instantiation);
+          TemplateParams = 0;
+        } else {
+          SourceLocation LAngleLoc =
+              PP.getLocForEndOfToken(TemplateInfo.TemplateLoc);
+          Diag(TemplateId->TemplateNameLoc,
+               diag::err_explicit_instantiation_with_definition)
+              << SourceRange(TemplateInfo.TemplateLoc)
+              << FixItHint::CreateInsertion(LAngleLoc, "<>");
+
+          // Create a fake template parameter list that contains only
+          // "template<>", so that we treat this construct as a class
+          // template specialization.
+          FakedParamLists.push_back(Actions.ActOnTemplateParameterList(
+              0, SourceLocation(), TemplateInfo.TemplateLoc, LAngleLoc, 0, 0,
+              LAngleLoc));
+          TemplateParams = &FakedParamLists;
+        }
       }
 
       // Build the class template specialization.
@@ -1612,7 +1618,7 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
   } else {
     if (TUK != Sema::TUK_Declaration && TUK != Sema::TUK_Definition)
       ProhibitAttributes(attrs);
-    
+
     if (TUK == Sema::TUK_Definition &&
         TemplateInfo.Kind == ParsedTemplateInfo::ExplicitInstantiation) {
       // If the declarator-id is not a template-id, issue a diagnostic and
@@ -1883,11 +1889,16 @@ VirtSpecifiers::Specifier Parser::isCXX11VirtSpecifier(const Token &Tok) const {
     // Initialize the contextual keywords.
     if (!Ident_final) {
       Ident_final = &PP.getIdentifierTable().get("final");
+      if (getLangOpts().MicrosoftExt)
+        Ident_sealed = &PP.getIdentifierTable().get("sealed");
       Ident_override = &PP.getIdentifierTable().get("override");
     }
 
     if (II == Ident_override)
       return VirtSpecifiers::VS_Override;
+
+    if (II == Ident_sealed)
+      return VirtSpecifiers::VS_Sealed;
 
     if (II == Ident_final)
       return VirtSpecifiers::VS_Final;
@@ -1916,14 +1927,18 @@ void Parser::ParseOptionalCXX11VirtSpecifierSeq(VirtSpecifiers &VS,
         << PrevSpec
         << FixItHint::CreateRemoval(Tok.getLocation());
 
-    if (IsInterface && Specifier == VirtSpecifiers::VS_Final) {
+    if (IsInterface && (Specifier == VirtSpecifiers::VS_Final ||
+                        Specifier == VirtSpecifiers::VS_Sealed)) {
       Diag(Tok.getLocation(), diag::err_override_control_interface)
         << VirtSpecifiers::getSpecifierName(Specifier);
+    } else if (Specifier == VirtSpecifiers::VS_Sealed) {
+      Diag(Tok.getLocation(), diag::ext_ms_sealed_keyword);
     } else {
-      Diag(Tok.getLocation(), getLangOpts().CPlusPlus11 ?
-           diag::warn_cxx98_compat_override_control_keyword :
-           diag::ext_override_control_keyword)
-        << VirtSpecifiers::getSpecifierName(Specifier);
+      Diag(Tok.getLocation(),
+           getLangOpts().CPlusPlus11
+               ? diag::warn_cxx98_compat_override_control_keyword
+               : diag::ext_override_control_keyword)
+          << VirtSpecifiers::getSpecifierName(Specifier);
     }
     ConsumeToken();
   }
@@ -1941,10 +1956,13 @@ bool Parser::isCXX11FinalKeyword() const {
   // Initialize the contextual keywords.
   if (!Ident_final) {
     Ident_final = &PP.getIdentifierTable().get("final");
+    if (getLangOpts().MicrosoftExt)
+      Ident_sealed = &PP.getIdentifierTable().get("sealed");
     Ident_override = &PP.getIdentifierTable().get("override");
   }
-  
-  return Tok.getIdentifierInfo() == Ident_final;
+
+  return Tok.getIdentifierInfo() == Ident_final ||
+         Tok.getIdentifierInfo() == Ident_sealed;
 }
 
 /// ParseCXXClassMemberDeclaration - Parse a C++ class member declaration.
@@ -1975,6 +1993,7 @@ bool Parser::isCXX11FinalKeyword() const {
 ///       virt-specifier:
 ///         override
 ///         final
+/// [MS]    sealed
 /// 
 ///       pure-specifier:
 ///         '= 0'
@@ -1991,12 +2010,12 @@ void Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
       Diag(Tok, diag::err_at_defs_cxx);
     else
       Diag(Tok, diag::err_at_in_class);
-    
+
     ConsumeToken();
     SkipUntil(tok::r_brace);
     return;
   }
-  
+
   // Access declarations.
   bool MalformedTypeSpec = false;
   if (!TemplateInfo.Kind &&
@@ -2459,7 +2478,7 @@ void Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
 ///     assignment-expression
 ///     braced-init-list
 ///
-///   defaulted/deleted function-definition:                                                                                                                                                                                               
+///   defaulted/deleted function-definition:
 ///     '=' 'default'
 ///     '=' 'delete'
 ///
@@ -2566,20 +2585,27 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
     Actions.ActOnTagStartDefinition(getCurScope(), TagDecl);
 
   SourceLocation FinalLoc;
+  bool IsFinalSpelledSealed = false;
 
   // Parse the optional 'final' keyword.
   if (getLangOpts().CPlusPlus && Tok.is(tok::identifier)) {
-    assert(isCXX11FinalKeyword() && "not a class definition");
+    VirtSpecifiers::Specifier Specifier = isCXX11VirtSpecifier(Tok);
+    assert((Specifier == VirtSpecifiers::VS_Final ||
+            Specifier == VirtSpecifiers::VS_Sealed) &&
+           "not a class definition");
     FinalLoc = ConsumeToken();
+    IsFinalSpelledSealed = Specifier == VirtSpecifiers::VS_Sealed;
 
-    if (TagType == DeclSpec::TST_interface) {
+    if (TagType == DeclSpec::TST_interface)
       Diag(FinalLoc, diag::err_override_control_interface)
-        << "final";
-    } else {
-      Diag(FinalLoc, getLangOpts().CPlusPlus11 ?
-           diag::warn_cxx98_compat_override_control_keyword :
-           diag::ext_override_control_keyword) << "final";
-    }
+        << VirtSpecifiers::getSpecifierName(Specifier);
+    else if (Specifier == VirtSpecifiers::VS_Final)
+      Diag(FinalLoc, getLangOpts().CPlusPlus11
+                         ? diag::warn_cxx98_compat_override_control_keyword
+                         : diag::ext_override_control_keyword)
+        << VirtSpecifiers::getSpecifierName(Specifier);
+    else if (Specifier == VirtSpecifiers::VS_Sealed)
+      Diag(FinalLoc, diag::ext_ms_sealed_keyword);
 
     // Parse any C++11 attributes after 'final' keyword.
     // These attributes are not allowed to appear here,
@@ -2606,6 +2632,7 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
 
   if (TagDecl)
     Actions.ActOnStartCXXMemberDeclarations(getCurScope(), TagDecl, FinalLoc,
+                                            IsFinalSpelledSealed,
                                             T.getOpenLocation());
 
   // C++ 11p3: Members of a class defined with the keyword class are private
@@ -2655,6 +2682,12 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
         continue;
       }
 
+      // If we see a namespace here, a close brace was missing somewhere.
+      if (Tok.is(tok::kw_namespace)) {
+        DiagnoseUnexpectedNamespace(cast<DeclContext>(TagDecl));
+        break;
+      }
+
       AccessSpecifier AS = getAccessSpecifierIfPresent();
       if (AS != AS_none) {
         // Current token is a C++ access specifier.
@@ -2695,8 +2728,6 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
 
         continue;
       }
-
-      // FIXME: Make sure we don't have a template here.
 
       // Parse all the comma separated declarators.
       ParseCXXClassMemberDeclaration(CurAS, AccessAttrs.getList());
@@ -2746,6 +2777,27 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
   // Leave the class scope.
   ParsingDef.Pop();
   ClassScope.Exit();
+}
+
+void Parser::DiagnoseUnexpectedNamespace(DeclContext *Ctx) {
+  assert(Tok.is(tok::kw_namespace));
+
+  // FIXME: Suggest where the close brace should have gone by looking
+  // at indentation changes within the definition body.
+  Diag(cast<Decl>(Ctx)->getLocation(),
+       diag::err_missing_end_of_definition) << Ctx;
+  Diag(Tok.getLocation(),
+       diag::note_missing_end_of_definition_before) << Ctx;
+
+  // Push '};' onto the token stream to recover.
+  PP.EnterToken(Tok);
+
+  Tok.startToken();
+  Tok.setLocation(PP.getLocForEndOfToken(PrevTokLocation));
+  Tok.setKind(tok::semi);
+  PP.EnterToken(Tok);
+
+  Tok.setKind(tok::r_brace);
 }
 
 /// ParseConstructorInitializer - Parse a C++ constructor initializer,
@@ -3337,6 +3389,37 @@ void Parser::ParseCXX11Attributes(ParsedAttributesWithRange &attrs,
   } while (isCXX11AttributeSpecifier());
 
   attrs.Range = SourceRange(StartLoc, *endLoc);
+}
+
+void Parser::DiagnoseAndSkipCXX11Attributes() {
+  if (!isCXX11AttributeSpecifier())
+    return;
+
+  // Start and end location of an attribute or an attribute list.
+  SourceLocation StartLoc = Tok.getLocation();
+  SourceLocation EndLoc;
+
+  do {
+    if (Tok.is(tok::l_square)) {
+      BalancedDelimiterTracker T(*this, tok::l_square);
+      T.consumeOpen();
+      T.skipToEnd();
+      EndLoc = T.getCloseLocation();
+    } else {
+      assert(Tok.is(tok::kw_alignas) && "not an attribute specifier");
+      ConsumeToken();
+      BalancedDelimiterTracker T(*this, tok::l_paren);
+      if (!T.consumeOpen())
+        T.skipToEnd();
+      EndLoc = T.getCloseLocation();
+    }
+  } while (isCXX11AttributeSpecifier());
+
+  if (EndLoc.isValid()) {
+    SourceRange Range(StartLoc, EndLoc);
+    Diag(StartLoc, diag::err_attributes_not_allowed)
+      << Range;
+  }
 }
 
 /// ParseMicrosoftAttributes - Parse a Microsoft attribute [Attr]
