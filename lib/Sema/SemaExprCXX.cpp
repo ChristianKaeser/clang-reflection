@@ -3803,6 +3803,12 @@ static StringLiteral *AllocateStringLiteral(ASTContext& Context,
     Kind, false, StrTy, KWLoc);
 }
 
+struct EumConstantDeclValueCmp {
+  bool operator()(const EnumConstantDecl* a, const EnumConstantDecl* b) {
+    return a->getInitVal() < b->getInitVal();
+  }
+};
+
 static IntegerLiteral *AllocateConvertedAccessSpecifier(ASTContext& Context,
                     SourceLocation KWLoc, QualType& VType, AccessSpecifier AS)
 {
@@ -3970,15 +3976,11 @@ ExprResult Sema::BuildReflectionTypeTrait(ReflectionTypeTrait RTT,
       }
 
       // Find min/max:
-      struct Cmp {
-        bool operator()(const EnumConstantDecl* a, const EnumConstantDecl* b) {
-          return a->getInitVal() < b->getInitVal();
-        }
-      };
+      EumConstantDeclValueCmp cmp;
       EnumDecl::enumerator_iterator ResEl;
       ResEl = (RTT == RTT_EnumMinimumValue) ?
-        std::min_element(ED->enumerator_begin(), ED->enumerator_end(), Cmp()) :
-        std::max_element(ED->enumerator_begin(), ED->enumerator_end(), Cmp());
+        std::min_element(ED->enumerator_begin(), ED->enumerator_end(), cmp) :
+        std::max_element(ED->enumerator_begin(), ED->enumerator_end(), cmp);
       assert(ResEl != ED->enumerator_end() && "No EnumMin/MaxValue found?");
 
       VType = Context.getEnumType(ED);
