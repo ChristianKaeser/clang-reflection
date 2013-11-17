@@ -3970,10 +3970,15 @@ ExprResult Sema::BuildReflectionTypeTrait(ReflectionTypeTrait RTT,
       }
 
       // Find min/max:
+      struct Cmp {
+        bool operator()(const EnumConstantDecl* a, const EnumConstantDecl* b) {
+          return a->getInitVal() < b->getInitVal();
+        }
+      };
       EnumDecl::enumerator_iterator ResEl;
       ResEl = (RTT == RTT_EnumMinimumValue) ?
-        std::min_element(ED->enumerator_begin(), ED->enumerator_end()) :
-        std::max_element(ED->enumerator_begin(), ED->enumerator_end());
+        std::min_element(ED->enumerator_begin(), ED->enumerator_end(), Cmp()) :
+        std::max_element(ED->enumerator_begin(), ED->enumerator_end(), Cmp());
       assert(ResEl != ED->enumerator_end() && "No EnumMin/MaxValue found?");
 
       VType = Context.getEnumType(ED);
