@@ -3621,6 +3621,9 @@ static const EnumDecl *RequireCompleteEnumType(Sema& S, SourceLocation KWLoc,
 
   S.DiagnoseUseOfDecl(ED, KWLoc);  // ??
 
+  if (S.RequireCompleteType(KWLoc, T, diag::err_incomplete_type_used_in_type_trait_expr, T))
+    return 0;
+
   ED = ED->getDefinition();
   if (!ED) {
     // RequireCompleteType does not seem to catch this case
@@ -3700,6 +3703,9 @@ const CXXRecordDecl *clang::RequireRecordType(Sema& S, SourceLocation KWLoc,
   assert(RD && "RD is null even though T isRecordType()");
 
   S.DiagnoseUseOfDecl(RD, KWLoc);  // ??
+
+  if (S.RequireCompleteType(KWLoc, T, diag::err_incomplete_type_used_in_type_trait_expr, T))
+    return 0;
 
   RD = RD->getDefinition();
   if (!RD) {
