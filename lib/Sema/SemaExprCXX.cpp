@@ -4177,14 +4177,20 @@ ExprResult Sema::BuildReflectionTypeTrait(ReflectionTypeTrait RTT,
     case RTT_TypeCanonicalName: {
       PrintingPolicy PP(LangOpts);
       PP.SuppressTagKeyword = true;   // no 'struct', 'class'...
+      PP.SuppressUnwrittenScope = true;   // do not add <anonymous>:: if type is defined in anon. NS
+      // ^-- also has the result that inline namespaces are not specified.. which should be okay
       Value = AllocateStringLiteral(Context, KWLoc, VType, T.getCanonicalType().getAsString(PP));
       break;
                                 }
 
-    case RTT_TypeSugaredName:
+    case RTT_TypeSugaredName: {
       // not really useful, besides maybe for macros..
-      Value = AllocateStringLiteral(Context, KWLoc, VType, T.getAsString());
+      // TODO: remove decltype() is outermost?
+      PrintingPolicy PP(LangOpts);
+      PP.SuppressUnwrittenScope = true;  // see above
+      Value = AllocateStringLiteral(Context, KWLoc, VType, T.getAsString(PP));
       break;
+                              }
 
     case RTT_TypeIsUnnamed: {
       const Type *TP = T.getTypePtrOrNull();
